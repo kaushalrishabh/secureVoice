@@ -1,0 +1,10 @@
+{
+  "name": "securevoice",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --names API,WEB --prefix-colors cyan,magenta \"yarn --cwd securevoice-api dev\" \"yarn --cwd securevoice-web dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
