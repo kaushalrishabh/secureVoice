@@ -13,4 +13,10 @@ const pool = mysql.createPool({
   connectionLimit: 10,
 });
 
+export async function connectDB() {
+  const connection = await pool.getConnection();
+  connection.release();
+  console.log("Database is Connected!")
+}
+
 export default pool;

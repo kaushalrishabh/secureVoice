@@ -1,5 +1,5 @@
 {
-  "name":"securevoice-api",
+  "name": "securevoice-api",
   "version": "1.0.0",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -8,6 +8,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "argon2": "^0.44.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -23,7 +24,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.9.1",
-    "@types/uuid": "^10.0.0",
+    "@types/uuid": "^11.0.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^6.0.3"
   }

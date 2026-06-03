@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS users (
   id               CHAR(36)      NOT NULL,
   email            VARCHAR(255)  NOT NULL,
   username         VARCHAR(50)   NOT NULL,
+  first_name        VARCHAR(100)  NOT NULL,
+  last_name        VARCHAR(100)  NOT NULL,
   password_hash    TEXT          NOT NULL,
   auth_salt        TEXT          NOT NULL,
   dek_salt         TEXT          NOT NULL,
