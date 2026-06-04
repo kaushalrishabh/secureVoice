@@ -5,7 +5,7 @@ export interface AppError extends Error {
 }
 
 // To handle Error Status Code Message
-export function errorHanlder(
+export function errorHandler(
     err: AppError,
     _req: Request,
     res: Response,

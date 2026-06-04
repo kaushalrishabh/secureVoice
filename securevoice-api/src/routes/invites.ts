@@ -114,3 +114,82 @@ router.get('/',  asyncHandler(async (
     );
     return res.json({ invites: rows })
 }))
+
+/**
+ * POST /api/invites/:token/accept
+ * 
+ * The invite has:
+ *  1. RSA-decrypted enc_note_dek from the invite -> plaintext note_DEK (in browser)
+ *  2. Re-wrapped note_DEK with their user_DEK -> new enc_note_dek (symmetric)
+ * 
+ * They POST the new enc_note_dek here. The server inserts a new note_keys row
+ * and marks the invite accpeted - all in a transaction
+ */
+router.post('/:token/accept', asyncHandler(async (
+    req: AuthRequest,
+    res: Response
+) => {
+    const { enc_note_dek } = req.body as { enc_note_dek: string }
+
+    if(!enc_note_dek) {
+        return res.status(400).json({ error: "Key is Required "})
+    }
+
+    const [inviteRows] = await pool.query(`
+            SELECT id, note_id, invitee_email, status, expires_at
+            FROM invites
+            WHERE token = ? 
+            LIMIT 1    
+        `,[req.params.token]
+    );
+    const invite = (inviteRows as any[])[0];
+    
+    if(!invite) {
+        return res.status(404).json({ error: "Invite Not Found "});
+    }
+    if(invite.invitee_email !== req.user!.email) {
+        return res.status(403).json({ error: "Invite is not for you"});
+    }
+    if(invite.status !== "pending") {
+        return res.status(409).json({ error: `Invite is already ${invite.status}` });
+    }
+    if(new Date(invite.expires_at) < new Date()) {
+        await pool.query(`
+                UPDATE invites SET status = 'expired' WHERE id = ?    
+            `,[invite.id]
+        )
+        return res.status(410).json({ error: 'Invite has Expired' });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // Insert symmetric key in the invite row
+        await conn.query(`
+                INSERT INTO note_keys (note_id, user_id, enc_note_dek, enc_method, role)
+                VALUES (?, ?, ?, 'symmetric', 'editor')
+            `, [invite.note_id, req.user!.id, enc_note_dek]
+        );
+
+        // Mark the Note as 'shared' if it isn't already
+        await conn.query(`
+                UPDATE notes SET type = 'shared' WHERE id = ? AND type = 'private'
+            `, [invite.id]
+        );
+
+        await conn.query("UPDATE invites SET status = 'accepted' WHERE id = ? ", [invite.id]);
+        await conn.commit();
+
+        return res.status(200).json({ message: "Invite Accepted", note_id: invite.note_id });
+    }
+    catch(err) {
+        await conn.rollback();
+        throw err
+    }
+    finally {
+        conn.release()
+    }
+}))
+
+export default router;
