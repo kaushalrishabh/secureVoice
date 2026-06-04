@@ -6,6 +6,7 @@ import { errorHanlder } from './middleware/error';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
+import folderRoutes from './routes/folder';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes)
+app.use('/app/folders', folderRoutes)
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
