@@ -18,7 +18,7 @@ router.use(requireAuth);
  * 
  * Body: { invitee_email, enc_note_dek }
  */
-router.post('/', asyncHandler( async(
+router.post('/notes/:noteId/invite', asyncHandler( async(
     req: AuthRequest,
     res: Response
 ) => {
@@ -29,17 +29,18 @@ router.post('/', asyncHandler( async(
     }
 
     if(!invitee_email || !enc_note_dek) {
-        res.status(400).json({ error: "Invitee Email and Key are Required" })
+        return res.status(400).json({ error: "Invitee Email and Key are Required" })
     }
 
     // Inviter must own the note
     const [owner] = await pool.query(`
             SELECT n.id from notes n
-            INNER JOIN notes_key nk ON nk.note.id = n.id
-            WHERE n.id = ?  and nk.user_id = ? and nk.role = 'owner'
+            INNER JOIN note_keys nk ON nk.note_id = n.id
+            WHERE n.id = ? AND nk.user_id = ? AND nk.role = 'owner'
             LIMIT 1    
         `, [noteId, req.user!.id]
     )
+    console.log("fngkdsj-->", owner)
     if((owner as any[]).length === 0) {
         return res.status(403).json({ error: "Only Note Owner can send Invites"});
     }

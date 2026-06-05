@@ -38,7 +38,7 @@ router.get('/', asyncHandler(async (
             FROM notes n
             INNER JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
             ${folderClause}
-            ORDER BY n.pinned DESC, n.updated_at DESC,    
+            ORDER BY n.pinned DESC, n.updated_at DESC 
         `, params,
     )
     return res.json({ notes: rows })
@@ -83,15 +83,15 @@ router.post('/', asyncHandler( async(
     };
 
     if(!content_iv || !content_cipher) {
-        res.status(400).json({ error: "Error in Cipher Text "});
+        return res.status(400).json({ error: "Error in Cipher Text "});
     }
 
     if(!note_key?.enc_note_dek || !note_key?.enc_method) {
-        res.status(400).json({ error: "Error in Encryption "});
+        return res.status(400).json({ error: "Error in Encryption "});
     }
 
     if(!['private', 'shared'].includes(type)) {
-        res.status(400).json({ error: "Note type is Required" })
+        return res.status(400).json({ error: "Note type is Required" })
     }
 
     // Verify folder belongs to this user if provided
@@ -101,13 +101,13 @@ router.post('/', asyncHandler( async(
             `,[folder_id, req.user!.id]
         )
         if((folder as any[]).length === 0) {
-            res.status(400).json({ error: "Folder doesn't belong to you." })
+            return res.status(400).json({ error: "Folder doesn't belong to you." })
         }
     }
 
     const conn = await pool.getConnection()
     try {
-        await pool.beginTransaction();
+        await conn.beginTransaction();
 
         const noteId = uuidv4();
         await conn.query(`
@@ -115,6 +115,12 @@ router.post('/', asyncHandler( async(
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `, [noteId, req.user!.id, folder_id, type, content_iv, content_cipher, pinned ? 1 : 0]
         );
+
+        await conn.query(`
+                INSERT INTO note_keys (note_id, user_id, enc_note_dek, enc_method, role)
+                VALUES (?, ?, ?, ?, 'owner')
+            `,[noteId, req.user!.id, note_key.enc_note_dek, note_key.enc_method]
+        )
 
         await conn.commit();
         const [rows] = await pool.query(`
@@ -146,7 +152,7 @@ router.get('/:id', asyncHandler( async(
     res: Response
 ) => {
     const [noteRows] = await pool.query(`
-            SELECT n.*, nk_enc_note_dek, nk.enc_method, nk.role
+            SELECT n.*, nk.enc_note_dek, nk.enc_method, nk.role
             FROM notes n
             INNER JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
             WHERE n.id = ?
@@ -175,7 +181,7 @@ router.get('/:id', asyncHandler( async(
  * 
  * Body: { content_iv, content_cipher, folder_id, pinned }
 */
-router.put('/', asyncHandler(async (
+router.put('/:id', asyncHandler(async (
     req: AuthRequest,
     res: Response
 ) => {
@@ -188,7 +194,7 @@ router.put('/', asyncHandler(async (
         `, [req.params.id, req.user!.id]
     );
 
-    if((rows as any[])[0].length === 0) {
+    if((rows as any[]).length === 0) {
         return res.status(403).json({ error: 'Only the note owner can update the content' });
     }
 
@@ -228,7 +234,7 @@ router.put('/', asyncHandler(async (
     values.push(req.params.id)
     await pool.query(`
             UPDATE notes SET ${updates.join(', ')} WHERE id = ?
-        `, [values]
+        `, values
     )
 
     const [updated] = await pool.query(`
@@ -253,13 +259,13 @@ router.delete('/:id', asyncHandler( async(
     const [rows] = await pool.query(`
             SELECT n.id FROM notes n
             INNER JOIN note_keys nk ON nk.note_id = n.id
-            WHERE n.id = ? and nk.note_id = ? AND nk.role = 'owner'
+            WHERE n.id = ? and nk.user_id = ? AND nk.role = 'owner'
             LIMIT 1
         `, [req.params.id, req.user!.id]
     );
 
     // check if note is deleted by its owner
-    if((rows as any[])[0].length === 0) {
+    if((rows as any[]).length === 0) {
         return res.status(403).json({ error: "Only owner can delete a note" });
     }
     await pool.query(`

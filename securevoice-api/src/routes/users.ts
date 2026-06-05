@@ -9,7 +9,7 @@ const router = Router();
 // router.use()
 
 router.get('/public_key', asyncHandler(async (
-    req: Request,
+    req: AuthRequest,
     res: Response
 ) => {
     const { email } = req.query as { email?: string };
@@ -29,6 +29,8 @@ router.get('/public_key', asyncHandler(async (
             .status(404)
             .json({ error: 'No Account Found for that Email'})
     }
+    
+    return res.json({ username: user.username, public_key: user.public_key })
 }))
 
 export default router;

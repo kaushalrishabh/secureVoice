@@ -17,7 +17,7 @@ router.get('/', asyncHandler(async (
     const [rows] = await pool.query(`
             SELECT id, name, color, created_at
             FROM folders
-            WHERE user.id = ?
+            WHERE user_id = ?
             ORDER BY created_at ASC
         `, [req.user!.id]
     );
@@ -82,7 +82,7 @@ router.put('/:id' , asyncHandler(async(
             SELECT id FROM folders WHERE id = ? AND user_id = ?
         `,[req.params.id, req.user!.id]
     );
-    if((existing as any[]).length > 0){
+    if((existing as any[]).length === 0){
         return res.status(401).json({ error: "Folder Not Found"})
     }
 

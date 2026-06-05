@@ -177,7 +177,7 @@ router.get('/me',
         res: Response
     ) => {
         const [rows] = await pool.query(`
-            SELECT id, email, username, first_name, last_name, dek_salt, dek, public_key, private_key_enc, created_at FROM users WHERE user = ?
+            SELECT id, email, username, first_name, last_name, dek_salt, dek, public_key, private_key_enc, created_at FROM users WHERE id = ?
         `, [req.user!.id],
         )
         const user = (rows as any[])[0]
