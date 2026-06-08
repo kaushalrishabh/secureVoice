@@ -10,9 +10,11 @@ import { useAuthStore } from '../store/authStore';
 */
 
 export default function ProtectedRoute() {
-    const isAuthenticated = useAuthStore((s: any) => s.isAuthenticated);
-    if(isAuthenticated){
-        return <Navigate to = "/login" replace />;
+   const user  = useAuthStore((s) => s.user);
+    const token = localStorage.getItem('sv_token');
+
+    if (!user || !token) {
+        return <Navigate to="/login" replace />;
     }
 
     return <Outlet />;

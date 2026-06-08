@@ -64,9 +64,9 @@ router.post('/registration', asyncHandler( async (
 
     // Generate auth_salt for password rehashing
     const authSalt = crypto.randomBytes(32).toString('base64url');
-
+    const normalised_hash = client_hash.replace(/=+$/, '');
     // Argon2 hashing with authSalt
-    const rawHash = await argon2.hash(client_hash, {
+    const rawHash = await argon2.hash(normalised_hash, {
         type: argon2.argon2id,
         salt: Buffer.from(authSalt, 'base64url'),
         memoryCost: 19456,
@@ -127,7 +127,8 @@ router.post('/login', asyncHandler( async (
 
     // Re-hash the incoming client_hash with the stored salt + same parameters
     const dummySalt = crypto.randomBytes(32);
-    const recomputed = await argon2.hash(client_hash, {
+    const normalised_hash = client_hash.replace(/=+$/, '');
+    const recomputed = await argon2.hash(normalised_hash, {
         type: argon2.argon2id,
         salt: user ? Buffer.from(user.auth_salt, 'base64url') : dummySalt,
         memoryCost: 19456,

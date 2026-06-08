@@ -8,18 +8,22 @@ interface AuthStore {
     clearUser: () => void,
 
     // if both the JWT token and user object are present.
-    isAuthenticated: boolean
+    // isAuthenticated: boolean
 }
 
 export const useAuthStore = create<AuthStore>()(
     persist(
         (set) => ({
             user: null,
-            isAuthenticated: false,
+            // isAuthenticated: false,
             // to set user auth
-            setUser: (user: User) => set({ user, isAuthenticated: true }),
+            setUser: (user: User) => set({ user, 
+                // isAuthenticated: true 
+            }),
             // to remove user auth
-            clearUser: () => set({ user: null, isAuthenticated: false }),
+            clearUser: () => set({ user: null,
+                //  isAuthenticated: false 
+            }),
         }),
         {
             name: 'sv_user', // key in localStorage
@@ -29,7 +33,7 @@ export const useAuthStore = create<AuthStore>()(
             onRehydrateStorage: () => (state) => {
                 if(state) {
                     const hasToken = !!localStorage.getItem('sv_token');
-                    state.isAuthenticated = !!state.user && hasToken
+                    // state.isAuthenticated = !!state.user && hasToken
                 }
             },
         },
