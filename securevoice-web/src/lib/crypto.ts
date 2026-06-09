@@ -40,7 +40,47 @@ export function fromBase64url(str: string): ArrayBuffer {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes.buffer;
 }
- 
+
+// --- Generic Text Encryption
+
+/**
+ * Encrypt a plain string with AES-256-GCM
+ * Return seperat iv and cipher as base64url strings
+ * Used for note blocks
+*/
+export async function encrypt(
+    data: string,
+    key: CryptoKey
+) : Promise<{ iv: string, cipher: string }> {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipherText = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv},
+        key,
+        new TextEncoder().encode(data)
+    );
+    return {
+        iv: toBase64Url(iv),
+        cipher: toBase64Url(cipherText)
+    }
+}
+
+/**
+ * Decrypt AES-256-GCM ciphertext back to a plain string.
+ * iv and cipher are seperate base64url string matching the encrypt() output
+*/
+export async function decrypt(
+    iv: string,
+    cipher: string,
+    key: CryptoKey
+) : Promise <string>{
+    const plainText = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: fromBase64url(iv) },
+        key,
+        fromBase64url(cipher)
+    )
+    return new TextDecoder().decode(plainText);
+}
+
 // ── Key derivation ────────────────────────────────────────────────────────────
  
 /**

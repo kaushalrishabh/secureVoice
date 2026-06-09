@@ -1,6 +1,31 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
-body {
-  font-family: 'Outfit', sans-serif;
+:root {
+  --sv-bg:            #0C0C0E;
+  --sv-brand:         #0F0F12;
+  --sv-surface:       #18181B;
+  --sv-surface-2:     #27272A;
+  --sv-accent:        #F59E0B;
+  --sv-accent-dim:    rgba(245, 158, 11, 0.1);
+  --sv-accent-border: rgba(245, 158, 11, 0.25);
+  --sv-text:          #FAFAFA;
+  --sv-text-2:        #71717A;
+  --sv-text-3:        #52525B;
+  --sv-text-4:        #3F3F46;
+  --sv-border:        rgba(255, 255, 255, 0.05);
+  --sv-border-2:      rgba(255, 255, 255, 0.08);
+  --sv-green:         #22C55E;
+  --sv-danger:        #EF4444;
+  --sv-mono:          'JetBrains Mono', monospace;
 }
+
+body {
+  background-color: var(--sv-bg);
+  color: var(--sv-text);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+input::placeholder { color: var(--sv-text-4); }
+input:focus        { outline: none; }

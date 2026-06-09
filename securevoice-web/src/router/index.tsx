@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import Login from "../pages/auth/Login";
 import Register from "../pages/auth/Register";
+import Notes from "../pages/app/Notes";
 
 const router = createBrowserRouter([
     // -------------- Public Routes ------------------------------
@@ -22,10 +23,10 @@ const router = createBrowserRouter([
                 path: "/",
                 element: <Navigate to="/notes" replace />,
             },
-            // {
-            //     path: "/notes",
-            //     element: <Notes />,
-            // }
+            {
+                path: "/notes",
+                element: <Notes />,
+            }
             // Phase 3 - add these when the pages are built
         ]
     },
