@@ -76,7 +76,7 @@ export async function register(
     const private_key_enc = await exportEncryptedPrivateKey(privateKey, userDEK);
     
     // ── Step 4: send to server ───────────────────────────────────────────────
-    const { token, data } = await apiFetch<AuthResponse>('/api/auth/register', {
+    const { token, data } = await apiFetch<AuthResponse>('/api/auth/registration', {
         method: 'POST',
         body: JSON.stringify({
         email,

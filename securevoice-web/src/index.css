@@ -29,3 +29,10 @@ body {
 
 input::placeholder { color: var(--sv-text-4); }
 input:focus        { outline: none; }
+
+/* Remove browser focus highlight from all inputs and textareas */
+textarea:focus,
+input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}

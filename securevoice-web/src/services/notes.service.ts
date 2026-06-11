@@ -242,7 +242,12 @@ export async function saveNote(
 export function pinNote(noteId: string, pinned: boolean): Promise<void> {
   return saveNote(noteId, { pinned });
 }
- 
+
+/** Returns the cached note_DEK for a note — needed externally for sharing. */
+export function getCachedNoteDEK(noteId: string): CryptoKey | null {
+  return noteDEKCache.get(noteId) ?? null;
+}
+
 // ── Delete note ───────────────────────────────────────────────────────────────
  
 export async function deleteNote(noteId: string): Promise<void> {
