@@ -1,3 +1,9 @@
+import {
+  toBase64Url, fromBase64url, importEncryptedPrivateKey,
+} from '../lib/crypto';
+
+const DEK_KEY = 'sv_dek';
+
 /**
  * session.ts — in-memory runtime key store
  *
@@ -45,4 +51,46 @@ export function requireUserDEK(): CryptoKey {
 export function requirePrivateKey(): CryptoKey {
     if(!session.RSAPrivateKey)    throw new Error('No Active Session - Please Log In');
     return session.RSAPrivateKey
+}
+
+/** Saves user_DEK raw bytes to sessionStorage. Survives refresh, clears on tab close. */
+export async function persistSessionDEK(userDEK: CryptoKey): Promise<void> {
+  try {
+    const raw = await crypto.subtle.exportKey('raw', userDEK);
+    sessionStorage.setItem(DEK_KEY, toBase64Url(raw));
+  } catch (e) {
+    console.warn('Could not persist session DEK:', e);
+  }
+}
+
+/**
+ * Tries to restore session from sessionStorage.
+ * Needs the encrypted private key (from Zustand store) to re-derive the RSA key.
+ * Returns true if successful, false if sessionStorage is empty or corrupt.
+ */
+export async function tryRestoreSession(privateKeyEnc: string): Promise<boolean> {
+  const stored = sessionStorage.getItem(DEK_KEY);
+  if (!stored) return false;
+
+  try {
+    const userDEK = await crypto.subtle.importKey(
+      'raw',
+      fromBase64url(stored),
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt'],
+    );
+    const rsaPrivateKey = await importEncryptedPrivateKey(privateKeyEnc, userDEK);
+    session.userDEK      = userDEK;
+    session.RSAPrivateKey = rsaPrivateKey;
+    return true;
+  } catch {
+    sessionStorage.removeItem(DEK_KEY);
+    return false;
+  }
+}
+
+/** Call on sign-out. */
+export function clearPersistedSession(): void {
+  sessionStorage.removeItem(DEK_KEY);
 }

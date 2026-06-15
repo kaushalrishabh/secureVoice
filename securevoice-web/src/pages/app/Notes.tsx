@@ -5,12 +5,13 @@ import { useAuthStore } from '../../store/authStore';
 import { signOut } from '../../services/auth.service';
 import {
   listNotes, fetchNote, createNote, saveNote, deleteNote,
-  fetchDecryptedBlocks, addBlock, getCachedNoteDEK,
+  fetchDecryptedBlocks, addBlock,
   type DecryptedNote, type DecryptedBlock,
 } from '../../services/notes.service';
 // import { shareNote } from '../../services/invites.service';
 import { apiFetch } from '../../lib/api';
 import type { Folder } from '../../types';
+import { getSession, tryRestoreSession } from '../../lib/session';
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 import Sidebar    from '../../components/layout/Sidebar.tsx';
@@ -81,7 +82,23 @@ export default function Notes() {
 
   // ── Load on mount ─────────────────────────────────────────────────────────
   useEffect(() => {
-    (async () => {
+    async function init() {
+      const { userDEK } = getSession();
+
+      if (!userDEK) {
+        const recovered = user?.private_key_enc
+          ? await tryRestoreSession(user.private_key_enc)
+          : false;
+
+        if (!recovered) {
+          toast.error('Session expired. Please sign in again.');
+          signOut();
+          clearUser();
+          navigate('/login');
+          return;
+        }
+      }
+      // Session valid — load data directly here
       try {
         const [notesList, { folders: fl }] = await Promise.all([
           listNotes(),
@@ -95,7 +112,8 @@ export default function Notes() {
       } finally {
         setLoading(false);
       }
-    })();
+    }
+    init();
   }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────

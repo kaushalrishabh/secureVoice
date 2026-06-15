@@ -20,7 +20,10 @@ import {
     toBase64Url
  } from "../lib/crypto";
 
-import { setSession, clearSession } from "../lib/session";
+import {
+   persistSessionDEK,
+   setSession, clearSession, clearPersistedSession,
+} from '../lib/session';
 import { apiFetch } from "../lib/api";
 
 // --- Types ---------------------------------------------
@@ -94,6 +97,7 @@ export async function register(
     // ── Step 5: persist token, load session keys ─────────────────────────────
     localStorage.setItem('sv_token', token);
     setSession({ userDEK, RSAPrivateKey: privateKey });
+    await persistSessionDEK(userDEK);   
     
     return data;
 }
@@ -132,6 +136,7 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   // ── Step 5: persist token, store session keys ─────────────────────────────
   localStorage.setItem('sv_token', token);
   setSession({ userDEK, RSAPrivateKey: rsaPrivateKey });
+  await persistSessionDEK(userDEK);  
  
   return data;
 }
@@ -141,5 +146,6 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 export function signOut(): void {
   localStorage.removeItem('sv_token');
   clearSession();
+  clearPersistedSession();  
 }
  
