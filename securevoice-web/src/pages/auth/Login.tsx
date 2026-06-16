@@ -123,6 +123,15 @@ export default function Login() {
                 required
               />
             </div>
+              <div className="flex justify-end mb-8 mt-1">
+                <Link
+                  to="/forgot-password"
+                  className="text-[12px] transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--sv-text-3)' }}
+                >
+                  Forgot password?
+                </Link>
+            </div>
             {/* Sign in button */}
             <button
               type="submit"

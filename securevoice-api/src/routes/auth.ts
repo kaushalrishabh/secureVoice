@@ -33,17 +33,17 @@ function signToken(payload: {
  * Server generates auth_salt, stretches client_hash with Argon2id,
  * stores the result. The plaintext password and DEK never reach the server.
  */
-router.post('/registration', asyncHandler( async (
+router.post('/register', asyncHandler( async (
     req: Request,
     res: Response
 ) => {
     const { 
-        first_name, last_name, email, username, client_hash, dek_salt, wrapped_dek, public_key, private_key_enc
+        first_name, last_name, email, username, client_hash, dek_salt, wrapped_dek, public_key, private_key_enc, dek_escrow
     } = req.body as Record <string, string>;
     
     // Check for field validations
     if(
-        !email || !username || !client_hash || !dek_salt || !wrapped_dek || !public_key || !private_key_enc || !first_name || !last_name
+        !email || !username || !client_hash || !dek_salt || !wrapped_dek || !public_key || !private_key_enc || !first_name || !last_name || !dek_escrow
     ) {
         return res
             .status(400)
@@ -79,10 +79,10 @@ router.post('/registration', asyncHandler( async (
     // Insert Data into DB
     const id = uuidv4();
     await pool.query(`
-        INSERT INTO users (id, email, first_name, last_name, username, password_hash, auth_salt, dek_salt, dek, public_key, private_key_enc)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ? ,? ,? ,?)
+        INSERT INTO users (id, email, first_name, last_name, username, password_hash, auth_salt, dek_salt, dek, public_key, private_key_enc, dek_escrow)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ? ,? ,? ,?, ?)
     `,[
-        id, email, first_name, last_name, username, passwordHash, authSalt, dek_salt, wrapped_dek, public_key, private_key_enc
+        id, email, first_name, last_name, username, passwordHash, authSalt, dek_salt, wrapped_dek, public_key, private_key_enc, dek_escrow
     ])
     
     // Generate Token for User authentication

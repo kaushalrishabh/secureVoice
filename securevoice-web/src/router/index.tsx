@@ -3,6 +3,8 @@ import ProtectedRoute from "./ProtectedRoute";
 import Login from "../pages/auth/Login";
 import Register from "../pages/auth/Register";
 import Notes from "../pages/app/Notes";
+import ResetPassword from "../pages/auth/ResetPassword";
+import ForgotPassword from "../pages/auth/ForgotPassword";
 // import Home from "../pages/Home";
 
 const router = createBrowserRouter([
@@ -18,6 +20,14 @@ const router = createBrowserRouter([
     {
         path: "/register",
         element: <Register />
+    },
+    {
+        path: "/forgot-password",
+        element: <ForgotPassword />
+    },
+    {
+        path: "reset-password",
+        element: <ResetPassword />
     },
 
     // -------------- Protected Routes ------------------------------
