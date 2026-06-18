@@ -193,4 +193,35 @@ router.post('/:token/accept', asyncHandler(async (
     }
 }))
 
+/**
+ * POST /api/invites/:token/decline
+ *
+ * Lets the invitee reject a pending invite. The inviter's enc_note_dek blob
+ * is left untouched (it's useless without the invitee's RSA key anyway) —
+ * we simply mark the invite as declined so it stops showing up as pending.
+ */
+router.post(
+    '/:token/decline',
+    asyncHandler(async (req: AuthRequest, res: Response) => {
+        const [inviteRows] = await pool.query(
+            `SELECT id, invitee_email, status FROM invites WHERE token = ? LIMIT 1`,
+            [req.params.token],
+        );
+        const invite = (inviteRows as any[])[0];
+
+        if (!invite) {
+            return res.status(404).json({ error: 'Invite not found' });
+        }
+        if (invite.invitee_email !== req.user!.email) {
+            return res.status(403).json({ error: 'This invite is not for you' });
+        }
+        if (invite.status !== 'pending') {
+            return res.status(409).json({ error: `Invite is already ${invite.status}` });
+        }
+        await pool.query("UPDATE invites SET status = 'declined' WHERE id = ?", [invite.id]);
+
+        return res.json({ message: 'Invite declined' });
+    }),
+);
+
 export default router;

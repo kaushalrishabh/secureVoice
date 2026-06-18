@@ -5,10 +5,10 @@ import { useAuthStore } from '../../store/authStore';
 import { signOut } from '../../services/auth.service';
 import {
   listNotes, fetchNote, createNote, saveNote, deleteNote,
-  fetchDecryptedBlocks, addBlock,
+  fetchDecryptedBlocks, addBlock, getCachedNoteDEK,
   type DecryptedNote, type DecryptedBlock,
 } from '../../services/notes.service';
-// import { shareNote } from '../../services/invites.service';
+import { shareNote } from '../../services/invites.service';
 import { apiFetch } from '../../lib/api';
 import type { Folder } from '../../types';
 import { getSession, tryRestoreSession } from '../../lib/session';
@@ -21,6 +21,7 @@ import NoteEditor from '../../components/notes/NoteEditor.tsx';
 import NoteFooter from '../../components/notes/NoteFooter.tsx';
 import Modal      from '../../components/ui/Modal.tsx';
 import FloatingInput from '../../components/ui/FloatingInput';
+import PendingInvitesBanner from '../../components/notes/PendingInvitesBanner.tsx';
 
 type NavKey = 'all' | 'shared' | 'pinned';
 
@@ -70,6 +71,17 @@ export default function Notes() {
   const [search,         setSearch]         = useState('');
   const [activeNav,      setActiveNav]      = useState<NavKey>('all');
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+
+  async function handleInviteAccepted(noteId: string) {
+    // Refresh the notes list so the newly shared note appears
+    try {
+      const notesList = await listNotes();
+      setNotes(notesList);
+      openNote(noteId);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to refresh notes');
+    }
+  }
 
   // ── Sync edit state when note changes ────────────────────────────────────
   useEffect(() => {
@@ -192,23 +204,23 @@ export default function Notes() {
     }
   }
 
-  // async function handleShare() {
-  //   if (!selectedId || !shareEmail.trim()) return;
-  //   const noteDEK = getCachedNoteDEK(selectedId);
-  //   if (!noteDEK) { toast.error('Note key not loaded — reopen the note and try again'); return; }
-  //   setShareLoading(true);
-  //   try {
-  //     await shareNote(selectedId, shareEmail.trim(), noteDEK);
-  //     setShareSuccess(true);
-  //     toast.success('Invite sent!');
-  //     setShareEmail('');
-  //     setTimeout(() => { setShowShare(false); setShareSuccess(false); }, 1800);
-  //   } catch (err: any) {
-  //     toast.error(err.message ?? 'Failed to send invite');
-  //   } finally {
-  //     setShareLoading(false);
-  //   }
-  // }
+  async function handleShare() {
+    if (!selectedId || !shareEmail.trim()) return;
+    const noteDEK = getCachedNoteDEK(selectedId);
+    if (!noteDEK) { toast.error('Note key not loaded — reopen the note and try again'); return; }
+    setShareLoading(true);
+    try {
+      await shareNote(selectedId, shareEmail.trim(), noteDEK);
+      setShareSuccess(true);
+      toast.success('Invite sent!');
+      setShareEmail('');
+      setTimeout(() => { setShowShare(false); setShareSuccess(false); }, 1800);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to send invite');
+    } finally {
+      setShareLoading(false);
+    }
+  }
 
   async function handleAddBlock() {
     if (!blockText.trim() || !selectedId) return;
@@ -246,152 +258,159 @@ export default function Notes() {
       const ap = a?.pinned ?? false;
       const bp = b?.pinned ?? false;
       if (ap && !bp) return -1;
-      if (!ap && bp) return 1
+      if (!ap && bp) return 1;
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--sv-bg)' }}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--sv-bg)' }}>
 
-      {/* Sidebar */}
-      <Sidebar
-        user={user}
-        notes={notes}
-        folders={folders}
-        activeNav={activeNav}
-        activeFolderId={activeFolderId}
-        onNavChange={(nav) => { setActiveNav(nav); setActiveFolderId(null); }}
-        onFolderChange={setActiveFolderId}
-        onNewNote={() => { setIsCreating(true); setSelectedId(null); setSelectedNote(null); setNewTitle(''); setNewContent(''); }}
-        onSignOut={handleSignOut}
-      />
+      {/* Banner spans full width, sits above the three-panel layout */}
+      <PendingInvitesBanner onAccepted={handleInviteAccepted} />
 
-      {/* Notes list */}
-      <NotesList
-        notes={sortedNotes}
-        loading={loading}
-        selectedId={selectedId}
-        search={search}
-        onSearch={setSearch}
-        onSelect={openNote}
-        onShare={(note) => { 
-          setSelectedId(note.id);
-          setShowShare(true);
-          setShareSuccess(false);
-          setShareEmail(''); 
-        }}
-        onDelete={(note) => {
-          setDeleteTarget(note);
-          setShowDelete(true);
-        }}
-      />
+      {/* Three-panel row — Sidebar / NotesList / Editor all live inside this flex row */}
+      <div className="flex flex-1 overflow-hidden">
 
-      {/* Editor panel */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-
-        <Navbar
-          note={selectedNote}
-          isCreating={isCreating}
-          hasChanges={hasChanges}
-          saving={saving}
-          onShare={() => { setShowShare(true); setShareSuccess(false); setShareEmail(''); }}
-          onDelete={() => { if (selectedNote) { setDeleteTarget(selectedNote); setShowDelete(true); } }}
-          onSave={handleSaveNote}
+        {/* Sidebar */}
+        <Sidebar
+          user={user}
+          notes={notes}
+          folders={folders}
+          activeNav={activeNav}
+          activeFolderId={activeFolderId}
+          onNavChange={(nav) => { setActiveNav(nav); setActiveFolderId(null); }}
+          onFolderChange={setActiveFolderId}
+          onNewNote={() => { setIsCreating(true); setSelectedId(null); setSelectedNote(null); setNewTitle(''); setNewContent(''); }}
+          onSignOut={handleSignOut}
         />
 
-        {/* Body */}
-        {noteLoading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <i className="ti ti-loader-2 animate-spin" style={{ fontSize: 26, color: 'var(--sv-text-3)' }} aria-hidden="true" />
-          </div>
+        {/* Notes list */}
+        <NotesList
+          notes={sortedNotes}
+          loading={loading}
+          selectedId={selectedId}
+          search={search}
+          onSearch={setSearch}
+          onSelect={openNote}
+          onShare={(note) => {
+            setSelectedId(note.id);
+            setShowShare(true);
+            setShareSuccess(false);
+            setShareEmail('');
+          }}
+          onDelete={(note) => {
+            setDeleteTarget(note);
+            setShowDelete(true);
+          }}
+        />
 
-        ) : isCreating ? (
-          <div className="flex-1 flex flex-col px-8 py-7 overflow-y-auto">
-            <input
-              autoFocus
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Note title"
-              className="w-full bg-transparent text-[24px] font-medium mb-4 leading-tight"
-              style={{ color: 'var(--sv-text)', caretColor: 'var(--sv-accent)', border: 'none', outline: 'none' }}
-            />
-            <textarea
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              placeholder="Start writing…"
-              className="flex-1 bg-transparent text-[15px] leading-relaxed resize-none w-full"
-              style={{ color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)', border: 'none', outline: 'none' }}
-            />
-            <div className="flex gap-3 mt-6 flex-shrink-0">
-              <button
-                onClick={handleCreateNote}
-                disabled={creating || !newTitle.trim()}
-                className="px-5 py-2.5 rounded-[10px] text-[14px] font-medium transition-opacity disabled:opacity-50"
-                style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
-              >
-                {creating ? 'Encrypting…' : 'Save Note'}
-              </button>
-              <button
-                onClick={() => setIsCreating(false)}
-                className="px-5 py-2.5 rounded-[10px] text-[14px] hover:opacity-70 transition-opacity"
-                style={{ color: 'var(--sv-text-3)', border: '0.5px solid var(--sv-border-2)' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+        {/* Editor panel */}
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        ) : selectedNote ? (
-          <>
-            <NoteEditor
-              note={selectedNote}
-              blocks={blocks}
-              editTitle={editTitle}
-              editContent={editContent}
-              folders={folders}
-              userId={user?.id ?? ''}
-              onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
-              onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
-              onSave={handleSaveNote}
-            />
-            <NoteFooter
-              note={selectedNote}
-              user={user}
-              blockText={blockText}
-              addingBlock={addingBlock}
-              onBlockTextChange={setBlockText}
-              onAddBlock={handleAddBlock}
-            />
-          </>
+          <Navbar
+            note={selectedNote}
+            isCreating={isCreating}
+            hasChanges={hasChanges}
+            saving={saving}
+            onShare={() => { setShowShare(true); setShareSuccess(false); setShareEmail(''); }}
+            onDelete={() => { if (selectedNote) { setDeleteTarget(selectedNote); setShowDelete(true); } }}
+            onSave={handleSaveNote}
+          />
 
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-5">
-            <div className="w-18 h-18 rounded-2xl flex items-center justify-center"
-                 style={{ background: 'var(--sv-surface)', width: 72, height: 72 }}>
-              <i className="ti ti-notes" style={{ fontSize: 32, color: 'var(--sv-text-4)' }} aria-hidden="true" />
+          {/* Body */}
+          {noteLoading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <i className="ti ti-loader-2 animate-spin" style={{ fontSize: 26, color: 'var(--sv-text-3)' }} aria-hidden="true" />
             </div>
-            <div className="text-center">
-              <p className="text-[16px] font-medium mb-1.5" style={{ color: 'var(--sv-text)' }}>
-                {notes.length === 0 ? 'No notes yet' : 'Select a note'}
-              </p>
-              <p className="text-[14px]" style={{ color: 'var(--sv-text-3)' }}>
-                {notes.length === 0 ? 'Create your first encrypted note' : 'Choose a note from the list'}
-              </p>
+
+          ) : isCreating ? (
+            <div className="flex-1 flex flex-col px-8 py-7 overflow-y-auto">
+              <input
+                autoFocus
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Note title"
+                className="w-full bg-transparent text-[24px] font-medium mb-4 leading-tight"
+                style={{ color: 'var(--sv-text)', caretColor: 'var(--sv-accent)', border: 'none', outline: 'none' }}
+              />
+              <textarea
+                value={newContent}
+                onChange={(e) => setNewContent(e.target.value)}
+                placeholder="Start writing…"
+                className="flex-1 bg-transparent text-[15px] leading-relaxed resize-none w-full"
+                style={{ color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)', border: 'none', outline: 'none' }}
+              />
+              <div className="flex gap-3 mt-6 flex-shrink-0">
+                <button
+                  onClick={handleCreateNote}
+                  disabled={creating || !newTitle.trim()}
+                  className="px-5 py-2.5 rounded-[10px] text-[14px] font-medium transition-opacity disabled:opacity-50"
+                  style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
+                >
+                  {creating ? 'Encrypting…' : 'Save Note'}
+                </button>
+                <button
+                  onClick={() => setIsCreating(false)}
+                  className="px-5 py-2.5 rounded-[10px] text-[14px] hover:opacity-70 transition-opacity"
+                  style={{ color: 'var(--sv-text-3)', border: '0.5px solid var(--sv-border-2)' }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-            {notes.length === 0 && (
-              <button
-                onClick={() => setIsCreating(true)}
-                className="flex items-center gap-2 px-5 py-3 rounded-[10px] text-[14px] font-medium mt-1"
-                style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
-              >
-                <i className="ti ti-plus" style={{ fontSize: 16 }} aria-hidden="true" />
-                Create your first note
-              </button>
-            )}
-          </div>
-        )}
-      </main>
+
+          ) : selectedNote ? (
+            <>
+              <NoteEditor
+                note={selectedNote}
+                blocks={blocks}
+                editTitle={editTitle}
+                editContent={editContent}
+                folders={folders}
+                userId={user?.id ?? ''}
+                onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
+                onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
+                onSave={handleSaveNote}
+              />
+              <NoteFooter
+                note={selectedNote}
+                user={user}
+                blockText={blockText}
+                addingBlock={addingBlock}
+                onBlockTextChange={setBlockText}
+                onAddBlock={handleAddBlock}
+              />
+            </>
+
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-5">
+              <div className="w-18 h-18 rounded-2xl flex items-center justify-center"
+                   style={{ background: 'var(--sv-surface)', width: 72, height: 72 }}>
+                <i className="ti ti-notes" style={{ fontSize: 32, color: 'var(--sv-text-4)' }} aria-hidden="true" />
+              </div>
+              <div className="text-center">
+                <p className="text-[16px] font-medium mb-1.5" style={{ color: 'var(--sv-text)' }}>
+                  {notes.length === 0 ? 'No notes yet' : 'Select a note'}
+                </p>
+                <p className="text-[14px]" style={{ color: 'var(--sv-text-3)' }}>
+                  {notes.length === 0 ? 'Create your first encrypted note' : 'Choose a note from the list'}
+                </p>
+              </div>
+              {notes.length === 0 && (
+                <button
+                  onClick={() => setIsCreating(true)}
+                  className="flex items-center gap-2 px-5 py-3 rounded-[10px] text-[14px] font-medium mt-1"
+                  style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
+                >
+                  <i className="ti ti-plus" style={{ fontSize: 16 }} aria-hidden="true" />
+                  Create your first note
+                </button>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* ── Share Modal ──────────────────────────────────────────────────── */}
       <Modal
@@ -421,7 +440,7 @@ export default function Notes() {
             </p>
             <div className="flex gap-3">
               <button
-                // onClick={handleShare}
+                onClick={handleShare}
                 disabled={shareLoading || !shareEmail.trim()}
                 className="flex-1 py-2.5 rounded-[10px] text-[14px] font-medium
                            flex items-center justify-center gap-2 transition-opacity disabled:opacity-50"

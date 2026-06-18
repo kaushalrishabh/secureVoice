@@ -6,9 +6,9 @@ import { asyncHandler } from "../middleware/error";
 
 const router = Router();
 
-// router.use()
+router.use(requireAuth);
 
-router.get('/public_key', asyncHandler(async (
+router.get('/public-key', asyncHandler(async (
     req: AuthRequest,
     res: Response
 ) => {
