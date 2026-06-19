@@ -295,7 +295,7 @@ router.post('/:id/blocks', asyncHandler( async(
         `, [req.params.id, req.user!.id]
     );
 
-    if((access as any[])[0].length === 0) {
+    if((access as any[]).length === 0) {
         return res.status(403).json({ error: 'You do not have access to Edit this Note' })
     }
 
@@ -321,7 +321,12 @@ router.post('/:id/blocks', asyncHandler( async(
         `, [id]
     )
 
-    return res.status(201).json({ blocks: (rows as any[])[0] });
+    return res.status(201).json({ 
+        blocks: {
+            ...(rows as any[])[0],
+            author_username : req.user!.username
+        } 
+    });
 }));
 
 /**
@@ -340,13 +345,20 @@ router.get('/:id/blocks', asyncHandler( async(
         return res.status(403).json({ error: 'You do not have access to view this note '})
     }
 
-    const [blocks] = await pool.query(`
-            SELECT id, author_id, content_iv, content_cipher, created_at
-            FROM note_blocks
-            WHERE note_id = ?
-            ORDER BY created_at ASC
-        `, [req.params.id]
-    );
+    const [blocks] = await pool.query(
+        `SELECT 
+            nb.id,
+            nb.author_id,
+            nb.content_iv,
+            nb.content_cipher,
+            nb.created_at,
+            u.username AS author_username
+        FROM note_blocks nb
+        JOIN users u ON u.id = nb.author_id
+        WHERE nb.note_id = ?
+        ORDER BY nb.created_at ASC`,
+    [req.params.id],
+);
 
     return res.json({ blocks })
 }))

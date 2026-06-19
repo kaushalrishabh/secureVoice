@@ -41,12 +41,12 @@ export default function Sidebar({
   return (
     <aside
       className="flex flex-col flex-shrink-0"
-      style={{ width: 160, background: 'var(--sv-brand)', borderRight: '0.5px solid var(--sv-border)' }}
+      style={{ width: 160, background: 'var(--sv-brand)', borderRight: '1px solid var(--sv-border-3)' }}
     >
       {/* Logo */}
       <div
         className="flex items-center gap-2.5 px-3.5 py-4"
-        style={{ borderBottom: '0.5px solid var(--sv-border)' }}
+        style={{ borderBottom: '1px solid var(--sv-border)' }}
       >
         <div
           className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -112,7 +112,7 @@ export default function Sidebar({
       {/* User */}
       <div
         className="px-3 py-3 flex items-center gap-2 group"
-        style={{ borderTop: '0.5px solid var(--sv-border)' }}
+        style={{ borderTop: '1px solid var(--sv-border)' }}
       >
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"

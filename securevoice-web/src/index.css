@@ -2,21 +2,22 @@
 @import "tailwindcss";
 
 :root {
-  --sv-bg:            #0C0C0E;
-  --sv-brand:         #0F0F12;
-  --sv-surface:       #18181B;
+  --sv-bg:            #0A0A0C;
+  --sv-brand:         #141417;
+  --sv-surface:       #1E1E22;
   --sv-surface-2:     #27272A;
   --sv-accent:        #F59E0B;
-  --sv-accent-dim:    rgba(245, 158, 11, 0.1);
-  --sv-accent-border: rgba(245, 158, 11, 0.25);
+  --sv-accent-dim:    rgba(245, 158, 11, 0.12);
+  --sv-accent-border: rgba(245, 158, 11, 0.35);
   --sv-text:          #FAFAFA;
-  --sv-text-2:        #71717A;
-  --sv-text-3:        #52525B;
-  --sv-text-4:        #3F3F46;
-  --sv-border:        rgba(255, 255, 255, 0.05);
-  --sv-border-2:      rgba(255, 255, 255, 0.08);
+  --sv-text-2:        #A1A1AA;
+  --sv-text-3:        #8B8B93;
+  --sv-text-4:        #5C5C64;
+  --sv-border:        rgba(255, 255, 255, 0.14);;
+  --sv-border-2:      rgba(255, 255, 255, 0.20);;
   --sv-green:         #22C55E;
   --sv-danger:        #EF4444;
+  --sv-blue:          #06B6D4;
   --sv-mono:          'JetBrains Mono', monospace;
 }
 

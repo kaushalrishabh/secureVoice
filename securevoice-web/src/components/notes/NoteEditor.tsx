@@ -15,8 +15,8 @@ interface NoteEditorProps {
 
 const BLOCK_COLORS = ['#F59E0B', '#06B6D4', '#8B5CF6', '#22C55E', '#F97316', '#EC4899'];
 
-function blockColor(userId: string) {
-  const n = userId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+function blockColor(seed: string) {
+  const n = seed.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   return BLOCK_COLORS[n % BLOCK_COLORS.length];
 }
 
@@ -39,9 +39,28 @@ export default function NoteEditor({
   onTitleChange, onContentChange, onSave,
 }: NoteEditorProps) {
   const folderName = folders.find((f) => f.id === note.folder_id)?.name;
+  const isShared   = note.type === 'shared';
 
   return (
     <div className="flex-1 overflow-y-auto px-8 py-7 flex flex-col">
+
+      {/* Ownership / privacy badge — the clear distinction requested */}
+      <div className="mb-3">
+        <span
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
+          style={
+            isShared
+              ? { background: 'rgba(6,182,212,0.12)', color: 'var(--sv-blue)', border: '1px solid rgba(6,182,212,0.35)' }
+              : { background: 'rgba(255,255,255,0.06)', color: 'var(--sv-text-3)', border: '1px solid var(--sv-border-2)' }
+          }
+        >
+          <i className={`ti ${isShared ? 'ti-users' : 'ti-lock'}`} style={{ fontSize: 12 }} aria-hidden="true" />
+          {isShared
+            ? (note.role === 'owner' ? 'Shared by you' : 'Shared with you')
+            : 'Private note'}
+        </span>
+      </div>
+
       {/* Editable title */}
       <input
         value={editTitle}
@@ -72,7 +91,7 @@ export default function NoteEditor({
         <i className="ti ti-lock" style={{ fontSize: 12, color: 'var(--sv-text-4)' }} aria-hidden="true" />
       </div>
 
-      {/* Editable content — click to type, no highlight */}
+      {/* Editable content — no focus highlight */}
       <textarea
         value={editContent}
         onChange={(e) => onContentChange(e.target.value)}
@@ -90,21 +109,25 @@ export default function NoteEditor({
         }}
       />
 
-      {/* Contributor blocks — shared notes */}
-      {note.type === 'shared' && blocks.length > 0 && (
+      {/* Contributor blocks — shared notes, attributed to real usernames where available */}
+      {isShared && blocks.length > 0 && (
         <div className="mt-6 space-y-4">
           <div className="flex items-center gap-2 mb-4">
-            <div className="flex-1 h-px" style={{ background: 'var(--sv-border)' }} />
-            <span className="text-[11px] uppercase tracking-[0.6px]" style={{ color: 'var(--sv-text-4)' }}>
+            <div className="flex-1 h-px" style={{ background: 'var(--sv-border-3)' }} />
+            <span className="text-[11px] uppercase tracking-[0.6px] font-medium" style={{ color: 'var(--sv-text-3)' }}>
               Contributions
             </span>
-            <div className="flex-1 h-px" style={{ background: 'var(--sv-border)' }} />
+            <div className="flex-1 h-px" style={{ background: 'var(--sv-border-3)' }} />
           </div>
 
           {blocks.map((block, idx) => {
-            const color  = blockColor(block.author_id);
-            const isMe   = block.author_id === userId;
-            const isLast = idx === blocks.length - 1;
+            // author_username requires the backend to JOIN users on the blocks query.
+            // Falls back to a short id if not yet wired up — see notes below.
+            const displayName = (block as any).author_username ?? `User ${block.author_id.slice(0, 6)}`;
+            const colorSeed   = (block as any).author_username ?? block.author_id;
+            const color       = blockColor(colorSeed);
+            const isMe        = block.author_id === userId;
+            const isLast      = idx === blocks.length - 1;
 
             return (
               <div key={block.id} className="flex gap-3">
@@ -114,13 +137,10 @@ export default function NoteEditor({
                     className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-medium"
                     style={{ background: color, color: '#0C0C0E' }}
                   >
-                    {isMe ? initials(userId.slice(0, 4)) : initials(block.author_id)}
+                    {isMe ? 'You' : initials(displayName)}
                   </div>
                   {!isLast && (
-                    <div
-                      className="w-px flex-1"
-                      style={{ background: `${color}20`, minHeight: 14 }}
-                    />
+                    <div className="w-px flex-1" style={{ background: `${color}30`, minHeight: 14 }} />
                   )}
                 </div>
 
@@ -128,7 +148,7 @@ export default function NoteEditor({
                 <div className="flex-1 min-w-0 pb-1">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[13px] font-medium" style={{ color: 'var(--sv-text)' }}>
-                      {isMe ? 'You' : `User ${block.author_id.slice(0, 6)}`}
+                      {isMe ? 'You' : displayName}
                     </span>
                     <span className="text-[11px]" style={{ color: 'var(--sv-text-4)' }}>
                       {relDate(block.created_at)}
@@ -136,7 +156,7 @@ export default function NoteEditor({
                   </div>
                   <div
                     className="rounded-[10px] px-4 py-3"
-                    style={{ background: 'var(--sv-surface)', borderLeft: `2px solid ${color}` }}
+                    style={{ background: 'var(--sv-surface)', borderLeft: `3px solid ${color}` }}
                   >
                     <p className="text-[14px] leading-relaxed" style={{ color: 'var(--sv-text-2)' }}>
                       {block.text}

@@ -18,6 +18,8 @@ function relDate(d: string) {
 }
 
 export default function NoteListItem({ note, isSelected, onSelect, onShare, onDelete }: NoteListItemProps) {
+  const isShared = note.type === 'shared';
+
   return (
     <div
       onClick={onSelect}
@@ -25,17 +27,33 @@ export default function NoteListItem({ note, isSelected, onSelect, onShare, onDe
       style={{
         padding: '11px 16px',
         background: isSelected ? 'var(--sv-surface)' : 'transparent',
-        borderLeft: isSelected ? '2px solid var(--sv-accent)' : '2px solid transparent',
+        borderLeft: isSelected ? '3px solid var(--sv-accent)' : '3px solid transparent',
         borderBottom: '0.5px solid var(--sv-border)',
       }}
     >
-      {/* Pinned badge */}
-      {note.pinned && (
-        <div className="flex items-center gap-1 mb-1.5">
-          <i className="ti ti-pin" style={{ fontSize: 11, color: 'var(--sv-accent)' }} aria-hidden="true" />
-          <span className="text-[11px]" style={{ color: 'var(--sv-accent)' }}>Pinned</span>
-        </div>
-      )}
+      {/* Badges row — Pinned + Private/Shared, always visible */}
+      <div className="flex items-center gap-1.5 mb-2">
+        {note.pinned && (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+            style={{ background: 'var(--sv-accent-dim)', color: 'var(--sv-accent)', border: '1px solid var(--sv-accent-border)' }}
+          >
+            <i className="ti ti-pin" style={{ fontSize: 10 }} aria-hidden="true" />
+            Pinned
+          </span>
+        )}
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+          style={
+            isShared
+              ? { background: 'rgba(6,182,212,0.12)', color: 'var(--sv-blue)', border: '1px solid rgba(6,182,212,0.35)' }
+              : { background: 'rgba(255,255,255,0.06)', color: 'var(--sv-text-3)', border: '1px solid var(--sv-border-2)' }
+          }
+        >
+          <i className={`ti ${isShared ? 'ti-users' : 'ti-lock'}`} style={{ fontSize: 10 }} aria-hidden="true" />
+          {isShared ? 'Shared' : 'Private'}
+        </span>
+      </div>
 
       {/* Title + date */}
       <div className="flex items-center justify-between mb-1.5">
@@ -52,16 +70,8 @@ export default function NoteListItem({ note, isSelected, onSelect, onShare, onDe
         {note.content || 'No content yet'}
       </p>
 
-      {/* Footer row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          {note.type === 'shared' && (
-            <i className="ti ti-users" style={{ fontSize: 11, color: 'var(--sv-text-3)' }} aria-hidden="true" />
-          )}
-          <i className="ti ti-lock" style={{ fontSize: 11, color: 'var(--sv-text-4)' }} aria-hidden="true" />
-        </div>
-
-        {/* Actions — reveal on hover */}
+      {/* Actions — reveal on hover */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); onShare(); }}

@@ -260,6 +260,7 @@ export async function deleteNote(noteId: string): Promise<void> {
 export interface DecryptedBlock {
   id: string;
   author_id: string;
+  author_username: string;
   created_at: string;
   text: string;
 }
@@ -273,16 +274,16 @@ export async function fetchDecryptedBlocks(noteId: string): Promise<DecryptedBlo
   if (!noteDEK) throw new Error('Note DEK not cached — open the note first.');
  
   const { blocks } = await apiFetch<{
-    blocks: Array<{ id: string; author_id: string; content_iv: string; content_cipher: string; created_at: string }>;
+    blocks: Array<{ id: string; author_id: string; author_username: string ;content_iv: string; content_cipher: string; created_at: string }>;
   }>(`/api/notes/${noteId}/blocks`);
  
   return Promise.all(
     blocks.map(async (b) => {
       try {
         const text = await decrypt(b.content_iv, b.content_cipher, noteDEK);
-        return { id: b.id, author_id: b.author_id, created_at: b.created_at, text };
+        return { id: b.id, author_id: b.author_id, author_username: b.author_username,created_at: b.created_at, text };
       } catch {
-        return { id: b.id, author_id: b.author_id, created_at: b.created_at, text: '[Decryption failed]' };
+        return { id: b.id, author_id: b.author_id, author_username: b.author_username,  created_at: b.created_at, text: '[Decryption failed]' };
       }
     }),
   );
@@ -299,12 +300,12 @@ export async function addBlock(noteId: string, text: string): Promise<DecryptedB
   const { iv: content_iv, cipher: content_cipher } = await encrypt(text, noteDEK);
  
   const { block } = await apiFetch<{
-    block: { id: string; author_id: string; content_iv: string; content_cipher: string; created_at: string };
+    block: { id: string; author_id: string; author_username: string; content_iv: string; content_cipher: string; created_at: string };
   }>(`/api/notes/${noteId}/blocks`, {
     method: 'POST',
     body: JSON.stringify({ content_iv, content_cipher }),
   });
  
-  return { id: block.id, author_id: block.author_id, created_at: block.created_at, text };
+  return { id: block.id, author_id: block.author_id, author_username: block.author_username ,created_at: block.created_at, text };
 }
  

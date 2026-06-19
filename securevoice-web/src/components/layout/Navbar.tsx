@@ -13,10 +13,12 @@ interface NavbarProps {
 export default function Navbar({ note, isCreating, hasChanges, saving, onShare, onDelete, onSave }: NavbarProps) {
   if (!note && !isCreating) return null;
 
+  const isShared = note?.type === 'shared';
+
   return (
     <div
       className="flex items-center justify-between px-6 py-3 flex-shrink-0"
-      style={{ borderBottom: '0.5px solid var(--sv-border)' }}
+      style={{ borderBottom: '1px solid var(--sv-border-3)' }}
     >
       {/* Left — actions */}
       <div className="flex items-center gap-1">
@@ -45,15 +47,28 @@ export default function Navbar({ note, isCreating, hasChanges, saving, onShare, 
         )}
       </div>
 
-      {/* Centre — encrypted badge */}
-      <div className="flex items-center gap-1.5">
-        <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--sv-green)' }} />
+      {/* Centre — Encrypted + Private/Shared badges */}
+      <div className="flex items-center gap-2">
         <span
-          className="text-[11px]"
-          style={{ color: 'var(--sv-green)', fontFamily: 'var(--sv-mono)' }}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px]"
+          style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--sv-green)', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--sv-mono)' }}
         >
-          {note?.type === 'shared' ? 'Encrypted · Shared' : 'Encrypted'}
+          <i className="ti ti-shield-lock" style={{ fontSize: 12 }} aria-hidden="true" />
+          Encrypted
         </span>
+        {note && (
+          <span
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
+            style={
+              isShared
+                ? { background: 'rgba(6,182,212,0.12)', color: 'var(--sv-blue)', border: '1px solid rgba(6,182,212,0.35)' }
+                : { background: 'rgba(255,255,255,0.06)', color: 'var(--sv-text-3)', border: '1px solid var(--sv-border-2)' }
+            }
+          >
+            <i className={`ti ${isShared ? 'ti-users' : 'ti-lock'}`} style={{ fontSize: 12 }} aria-hidden="true" />
+            {isShared ? 'Shared' : 'Private'}
+          </span>
+        )}
       </div>
 
       {/* Right — save */}
