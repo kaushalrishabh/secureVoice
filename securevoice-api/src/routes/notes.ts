@@ -290,114 +290,110 @@ router.delete('/:id', asyncHandler( async(
 
 /**
  * POST /api/notes/:id/blocks
- * Appends an encrypted block to a note
- * Any user with a note_key (owner or editor) may add blocks
- * 
+ * Appends an encrypted block. Any user with a note_key may add blocks.
  * Body: { content_iv, content_cipher }
-*/
-router.post('/:id/blocks', asyncHandler( async(
-    req: AuthRequest,
-    res: Response
-) => {
-    const [access] = await pool.query(`
-            SELECT role FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1
-        `, [req.params.id, req.user!.id]
+ */
+router.post('/:id/blocks', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const [access] = await pool.query(
+        `SELECT 1 FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+        [req.params.id, req.user!.id],
     );
-
-    if((access as any[]).length === 0) {
-        return res.status(403).json({ error: 'You do not have access to Edit this Note' })
+    if ((access as any[]).length === 0) {
+        return res.status(403).json({ error: 'No access to this note' });
     }
-
+    
     const { content_cipher, content_iv } = req.body as {
-        content_cipher?: string,
-        content_iv?: string
+        content_cipher?: string;
+        content_iv?: string;
+    };
+    if (!content_cipher || !content_iv) {
+        return res.status(400).json({ error: 'content_iv and content_cipher are required' });
     }
-    if(!content_cipher || !content_iv) {
-        return res.status(400).json({ error: "Cipher Keys are Missing" });
-    }
-
+    
     const id = uuidv4();
-    await pool.query(`
-            INSERT INTO note_blocks (id, note_id, author_id, content_iv, content_cipher)
-            VALUES (? ,? ,? ,? ,?)
-        `, [id, req.params.id, req.user!.id, content_iv, content_cipher]
-    )
-
-    const [rows] = await pool.query(`
-            SELECT id, author_id, content_iv, content_cipher, created_at
-            FROM note_blocks 
-            WHERE id = ?
-        `, [id]
-    )
-
-    return res.status(201).json({ 
-        blocks: {
-            ...(rows as any[])[0],
-            author_username : req.user!.username
-        } 
+    await pool.query(
+        `INSERT INTO note_blocks (id, note_id, author_id, content_iv, content_cipher)
+        VALUES (?, ?, ?, ?, ?)`,
+        [id, req.params.id, req.user!.id, content_iv, content_cipher],
+    );
+    
+    const [rows] = await pool.query(
+        `SELECT id, author_id, content_iv, content_cipher, created_at
+        FROM note_blocks WHERE id = ?`,
+        [id],
+    );
+    
+    return res.status(201).json({
+        block: {
+        ...(rows as any[])[0],
+        author_username: req.user!.username,
+        },
     });
 }));
-
+ 
 /**
  * GET /api/notes/:id/blocks
- * Return all blocks for a note in chronological order
-*/
-router.get('/:id/blocks', asyncHandler( async(
-    req: AuthRequest,
-    res: Response
-) => {
-    const [access] = await pool.query(`
-            SELECT role FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1
-        `, [req.params.id, req.user!.id]
-    )
-    if((access as any[])[0].length === 0){
-        return res.status(403).json({ error: 'You do not have access to view this note '})
+ * Returns all blocks in chronological order with author usernames.
+ */
+router.get('/:id/blocks', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const [access] = await pool.query(
+        `SELECT 1 FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+        [req.params.id, req.user!.id],
+    );
+    if ((access as any[]).length === 0) {
+        return res.status(403).json({ error: 'No access to this note' });
     }
-
+    
     const [blocks] = await pool.query(
-        `SELECT 
-            nb.id,
-            nb.author_id,
-            nb.content_iv,
-            nb.content_cipher,
-            nb.created_at,
-            u.username AS author_username
+        `SELECT
+        nb.id,
+        nb.author_id,
+        nb.content_iv,
+        nb.content_cipher,
+        nb.created_at,
+        u.username AS author_username
         FROM note_blocks nb
         JOIN users u ON u.id = nb.author_id
         WHERE nb.note_id = ?
         ORDER BY nb.created_at ASC`,
-    [req.params.id],
-);
-
-    return res.json({ blocks })
-}))
-
-// POST /:id/blocks — add a new block
-router.post('/:id/blocks', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const [access] = await pool.query(
-    `SELECT 1 FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
-    [req.params.id, req.user!.id],
-  );
-  if ((access as any[]).length === 0) {
-    return res.status(403).json({ error: 'No access to this note' });
-  }
-
-  const { content_cipher, content_iv } = req.body as { content_cipher?: string; content_iv?: string };
-  if (!content_cipher || !content_iv) return res.status(400).json({ error: 'Cipher and IV are required' });
-
-  const id = uuidv4();
-  await pool.query(
-    `INSERT INTO note_blocks (id, note_id, author_id, content_iv, content_cipher) VALUES (?, ?, ?, ?, ?)`,
-    [id, req.params.id, req.user!.id, content_iv, content_cipher],
-  );
-
-  const [rows] = await pool.query(
-    `SELECT id, author_id, content_iv, content_cipher, created_at FROM note_blocks WHERE id = ?`,
-    [id],
-  );
-
-  return res.status(201).json({
-    block: { ...(rows as any[])[0], author_username: req.user!.username },
-  });
+        [req.params.id],
+    );
+    
+    return res.json({ blocks });
+}));
+ 
+/**
+ * PUT /api/notes/:id/blocks/:blockId
+ * Lets the original author edit their own block.
+ * Body: { content_iv, content_cipher }
+ */
+router.put('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { content_iv, content_cipher } = req.body as {
+        content_iv?: string;
+        content_cipher?: string;
+    };
+    if (!content_iv || !content_cipher) {
+        return res.status(400).json({ error: 'content_iv and content_cipher are required' });
+    }
+    
+    const [rows] = await pool.query(
+        `SELECT id, author_id FROM note_blocks WHERE id = ? AND note_id = ? LIMIT 1`,
+        [req.params.blockId, req.params.id],
+    );
+    const block = (rows as any[])[0];
+    
+    if (!block) {
+        return res.status(404).json({ error: 'Block not found' });
+    }
+    if (block.author_id !== req.user!.id) {
+        return res.status(403).json({ error: 'You can only edit your own contributions' });
+    }
+    
+    await pool.query(
+        `UPDATE note_blocks SET content_iv = ?, content_cipher = ? WHERE id = ?`,
+        [content_iv, content_cipher, block.id],
+    );
+    
+    return res.json({ message: 'Block updated' });
 }));
 export default router;

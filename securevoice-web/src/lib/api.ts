@@ -6,7 +6,7 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
 export class APIError extends Error {
-    constructor(status: number, message: string) {
+    constructor(_status: number, message: string) {
         super(message);
         this.name = "ApiError"
     }
@@ -22,7 +22,7 @@ export async function apiFetch <T = unknown> (
         ...options,
         headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token} `} : {} ),
+            ...(token ? { Authorization: `Bearer ${token}`} : {} ),
             ...(options.headers ?? {})
         },
     });

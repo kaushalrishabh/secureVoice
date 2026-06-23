@@ -363,7 +363,7 @@ export default function Notes() {
               </div>
             </div>
 
-          ) : selectedNote ? (
+         ) : selectedNote ? (
             <>
               <NoteEditor
                 note={selectedNote}
@@ -381,8 +381,7 @@ export default function Notes() {
                   setBlocks((p) => [...p, block]);
                 }}
               />
-
-              {/* Only show footer for private notes — mic button for Phase 4 */}
+              {/* Footer only for private notes — mic button for Phase 4 voice input */}
               {selectedNote.type !== 'shared' && (
                 <NoteFooter
                   note={selectedNote}
