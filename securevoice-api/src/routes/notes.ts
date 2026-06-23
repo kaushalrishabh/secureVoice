@@ -33,12 +33,23 @@ router.get('/', asyncHandler(async (
 
     const [rows] = await pool.query(`
             SELECT 
-                n.id, n.owner_id, n.folder_id, n.type, n.content_iv, n.content_cipher, n.pinned, n.created_at, n.updated_at,
-                nk.enc_note_dek, nk.enc_method, nk.role
+            n.id,
+            n.content_cipher,
+            n.content_iv,
+            n.pinned,
+            n.folder_id,
+            n.updated_at,
+            nk.role,
+            nk.enc_note_dek,
+            -- 'shared' if more than one user has a key, otherwise 'private'
+            CASE 
+                WHEN (SELECT COUNT(*) FROM note_keys WHERE note_id = n.id) > 1 
+                THEN 'shared' 
+                ELSE 'private' 
+            END AS type
             FROM notes n
-            INNER JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
-            ${folderClause}
-            ORDER BY n.pinned DESC, n.updated_at DESC 
+            JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
+            ORDER BY n.pinned DESC, n.updated_at DESC
         `, params,
     )
     return res.json({ notes: rows })
@@ -185,18 +196,16 @@ router.put('/:id', asyncHandler(async (
     req: AuthRequest,
     res: Response
 ) => {
-    // Owner only check
-    const [rows] = await pool.query(`
-            SELECT n.id FROM notes n
-            INNER JOIN note_keys nk ON nk.note_id = n.id
-            WHERE n.id = ?  AND nk.user_id = ? AND nk.role = 'owner'
-            LIMIT 1
-        `, [req.params.id, req.user!.id]
-    );
 
-    if((rows as any[]).length === 0) {
-        return res.status(403).json({ error: 'Only the note owner can update the content' });
-    }
+    const [accessRows] = await pool.query(
+    `SELECT role FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+    [req.params.id, req.user!.id],
+    );
+    const access = (accessRows as any[])[0];
+    if (!access) return res.status(403).json({ error: 'No access to this note' });
+
+    // Anyone with access can pin/move to folder
+    // (owner-only fields are title + content)
 
     const { content_iv, content_cipher, folder_id, pinned } = req.body as {
         content_iv?: string,
@@ -363,5 +372,32 @@ router.get('/:id/blocks', asyncHandler( async(
     return res.json({ blocks })
 }))
 
+// POST /:id/blocks — add a new block
+router.post('/:id/blocks', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const [access] = await pool.query(
+    `SELECT 1 FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+    [req.params.id, req.user!.id],
+  );
+  if ((access as any[]).length === 0) {
+    return res.status(403).json({ error: 'No access to this note' });
+  }
 
+  const { content_cipher, content_iv } = req.body as { content_cipher?: string; content_iv?: string };
+  if (!content_cipher || !content_iv) return res.status(400).json({ error: 'Cipher and IV are required' });
+
+  const id = uuidv4();
+  await pool.query(
+    `INSERT INTO note_blocks (id, note_id, author_id, content_iv, content_cipher) VALUES (?, ?, ?, ?, ?)`,
+    [id, req.params.id, req.user!.id, content_iv, content_cipher],
+  );
+
+  const [rows] = await pool.query(
+    `SELECT id, author_id, content_iv, content_cipher, created_at FROM note_blocks WHERE id = ?`,
+    [id],
+  );
+
+  return res.status(201).json({
+    block: { ...(rows as any[])[0], author_username: req.user!.username },
+  });
+}));
 export default router;

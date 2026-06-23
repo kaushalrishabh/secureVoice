@@ -50,14 +50,16 @@ export interface Note {
     role: 'owner' | 'editor'
 }
 
-export interface DecryptedNote extends NotePayload {
-    id: string;
-    folder_id: string | null;
-    type: 'private' | 'shared';
-    pinned: boolean;
-    role: 'owner' | 'editor';
-    created_at: string;
-    updated_at: string;
+export interface DecryptedNote {
+  id: string;
+  title: string;
+  content: string;
+  type: 'private' | 'shared';
+  role: 'owner' | 'editor';
+  pinned: boolean;
+  folder_id: string | null;
+  updated_at: string;
+  created_at: string;
 }
 
 // --- Session-scoped note_DEK cache ------------------
@@ -169,7 +171,7 @@ export async function fetchNote(
 export async function listNotes(
     folderId?: string,
 ): Promise <DecryptedNote[]> {
-    const qs = folderId ? `folder_id=${folderId}` : '';
+    const qs = folderId ? `?folder_id=${folderId}` : '';
     const { notes } = await apiFetch<{ notes: Note[] }>(`/api/notes${qs}`);
 
     return Promise.all(
@@ -299,13 +301,28 @@ export async function addBlock(noteId: string, text: string): Promise<DecryptedB
  
   const { iv: content_iv, cipher: content_cipher } = await encrypt(text, noteDEK);
  
-  const { block } = await apiFetch<{
-    block: { id: string; author_id: string; author_username: string; content_iv: string; content_cipher: string; created_at: string };
+  const { blocks } = await apiFetch<{
+    blocks: { id: string; author_id: string; author_username: string; content_iv: string; content_cipher: string; created_at: string };
   }>(`/api/notes/${noteId}/blocks`, {
     method: 'POST',
     body: JSON.stringify({ content_iv, content_cipher }),
   });
- 
-  return { id: block.id, author_id: block.author_id, author_username: block.author_username ,created_at: block.created_at, text };
+
+  return { id: blocks.id, author_id: blocks.author_id, author_username: blocks.author_username ,created_at: blocks.created_at, text };
 }
  
+export async function updateBlock(
+  noteId: string,
+  blockId: string,
+  text: string,
+): Promise<void> {
+  const noteDEK = noteDEKCache.get(noteId);
+  if (!noteDEK) throw new Error('Note DEK not cached — open the note first.');
+
+  const { iv: content_iv, cipher: content_cipher } = await encrypt(text, noteDEK);
+
+  await apiFetch(`/api/notes/${noteId}/blocks/${blockId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ content_iv, content_cipher }),
+  });
+}

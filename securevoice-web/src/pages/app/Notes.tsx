@@ -146,6 +146,9 @@ export default function Notes() {
       if (note.type === 'shared') {
         setBlocks(await fetchDecryptedBlocks(id));
       }
+      else {
+        setBlocks([]);
+      }
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to open note');
     } finally {
@@ -369,20 +372,28 @@ export default function Notes() {
                 editContent={editContent}
                 folders={folders}
                 userId={user?.id ?? ''}
+                isOwner={selectedNote.role === 'owner'}
                 onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
                 onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
                 onSave={handleSaveNote}
+                onAddBlock={async (text) => {
+                  const block = await addBlock(selectedNote.id, text);
+                  setBlocks((p) => [...p, block]);
+                }}
               />
-              <NoteFooter
-                note={selectedNote}
-                user={user}
-                blockText={blockText}
-                addingBlock={addingBlock}
-                onBlockTextChange={setBlockText}
-                onAddBlock={handleAddBlock}
-              />
-            </>
 
+              {/* Only show footer for private notes — mic button for Phase 4 */}
+              {selectedNote.type !== 'shared' && (
+                <NoteFooter
+                  note={selectedNote}
+                  user={user}
+                  blockText={blockText}
+                  addingBlock={addingBlock}
+                  onBlockTextChange={setBlockText}
+                  onAddBlock={handleAddBlock}
+                />
+              )}
+            </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-5">
               <div className="w-18 h-18 rounded-2xl flex items-center justify-center"

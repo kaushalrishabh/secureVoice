@@ -162,6 +162,13 @@ router.post('/:token/accept', asyncHandler(async (
         return res.status(410).json({ error: 'Invite has Expired' });
     }
 
+    const [existing] = await pool.query(
+        `SELECT 1 FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+        [invite.note_id, req.user!.id],
+    );
+    if ((existing as any[]).length > 0) {
+        return res.status(409).json({ error: 'You already have access to this note' });
+    }
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
@@ -175,8 +182,8 @@ router.post('/:token/accept', asyncHandler(async (
 
         // Mark the Note as 'shared' if it isn't already
         await conn.query(`
-                UPDATE notes SET type = 'shared' WHERE id = ? AND type = 'private'
-            `, [invite.id]
+                UPDATE notes SET type = 'shared' WHERE id = ?
+            `, [invite.note_id]
         );
 
         await conn.query("UPDATE invites SET status = 'accepted' WHERE id = ? ", [invite.id]);
