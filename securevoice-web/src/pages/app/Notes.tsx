@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { flushSync } from 'react-dom';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { signOut } from '../../services/auth.service';
@@ -239,6 +240,37 @@ export default function Notes() {
     }
   }
 
+  const handleOnBlockAdd = async (text: string) => {
+    if(!selectedNote) return;
+
+    const tempId = `temp-${Date.now()}`;
+    const optimisticBlock: DecryptedBlock = {
+      id: tempId,
+      author_id: user?.id ?? '',
+      author_username: user?.username ?? 'You',
+      text,
+      created_at: new Date().toISOString(),
+    };
+    flushSync(() => {
+      setBlocks((p) => [...p, optimisticBlock]);
+    });
+
+
+    try {
+      const real = await addBlock(selectedNote?.id, text);
+      console.log("real",  real)
+      setBlocks((p) => p.map((b) => b.id === tempId ? real : b));
+    } 
+    catch (err: any) {
+      setBlocks((p) => p.filter((b) => b.id !== tempId));
+      throw err; 
+    }
+  }
+
+  function handleOnBlockDelete(blockId: string) {
+    setBlocks((p) => p.filter((b) => b.id !== blockId));
+  }
+
   function handleSignOut() {
     signOut();
     clearUser();
@@ -376,10 +408,8 @@ export default function Notes() {
                 onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
                 onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
                 onSave={handleSaveNote}
-                onAddBlock={async (text) => {
-                  const block = await addBlock(selectedNote.id, text);
-                  setBlocks((p) => [...p, block]);
-                }}
+                onAddBlock={handleOnBlockAdd}
+                onDeleteBlock = {handleOnBlockDelete}
               />
               {/* Footer only for private notes — mic button for Phase 4 voice input */}
               {selectedNote.type !== 'shared' && (

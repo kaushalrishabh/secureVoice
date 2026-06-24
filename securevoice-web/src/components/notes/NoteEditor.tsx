@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import type { DecryptedNote, DecryptedBlock } from '../../services/notes.service';
-import { updateBlock } from '../../services/notes.service';
+import { updateBlock, deleteBlock } from '../../services/notes.service';
 import type { Folder } from '../../types';
 
 interface NoteEditorProps {
@@ -16,18 +16,27 @@ interface NoteEditorProps {
   onContentChange: (v: string) => void;
   onSave: () => void;
   onAddBlock: (text: string) => Promise<void>;
+  onDeleteBlock: (blockId: string) => void;
 }
 
-const AUTHOR_COLORS = ['#F59E0B', '#06B6D4', '#8B5CF6', '#22C55E', '#F97316', '#EC4899'];
+// ── Semantic color scheme ─────────────────────────────────────────────────────
+// Amber   #F59E0B  → original note body  (the note itself)
+// Green   #22C55E  → note owner's blocks (their additions)
+// Dynamic          → each collaborator gets a unique hue
+const OWNER_BLOCK_COLOR = '#22C55E';
+const ORIGINAL_COLOR    = '#F59E0B';
 
-function authorColor(seed: string) {
+// Exclude amber + green from collaborator palette so they don't clash
+const COLLAB_COLORS = ['#06B6D4', '#8B5CF6', '#F97316', '#EC4899', '#3B82F6', '#A855F7'];
+
+function collabColor(seed: string) {
   const n = seed.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  return AUTHOR_COLORS[n % AUTHOR_COLORS.length];
+  return COLLAB_COLORS[n % COLLAB_COLORS.length];
 }
 
 function relDate(d: string) {
-  const dt   = new Date(d);
-  const h    = (Date.now() - dt.getTime()) / 3_600_000;
+  const dt = new Date(d);
+  const h  = (Date.now() - dt.getTime()) / 3_600_000;
   if (h < 24) return dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   if (h < 48) return 'Yesterday';
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -35,15 +44,15 @@ function relDate(d: string) {
 
 // ── Auto-growing textarea ─────────────────────────────────────────────────────
 function AutoTextarea({
-  value, onChange, onBlur, placeholder, autoFocus, style, className,
+  value, onChange, onBlur, onKeyDown, placeholder, autoFocus, style,
 }: {
   value: string;
   onChange: (v: string) => void;
   onBlur?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder?: string;
   autoFocus?: boolean;
   style?: React.CSSProperties;
-  className?: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -52,7 +61,6 @@ function AutoTextarea({
       ref.current.style.height = ref.current.scrollHeight + 'px';
     }
   }, [value]);
-
   return (
     <textarea
       ref={ref}
@@ -60,42 +68,54 @@ function AutoTextarea({
       autoFocus={autoFocus}
       onChange={(e) => onChange(e.target.value)}
       onBlur={onBlur}
+      onKeyDown={onKeyDown}
       placeholder={placeholder}
-      className={className}
       rows={1}
       style={{
-        resize: 'none',
-        overflow: 'hidden',
-        width: '100%',
-        background: 'transparent',
-        border: 'none',
-        outline: 'none',
-        boxShadow: 'none',
+        resize: 'none', overflow: 'hidden', width: '100%',
+        background: 'transparent', border: 'none', outline: 'none', boxShadow: 'none',
         ...style,
       }}
     />
   );
 }
 
-// ── A single document segment (block) ────────────────────────────────────────
+// ── Segment ───────────────────────────────────────────────────────────────────
 function Segment({
-  block, noteId, userId,
+  block, noteId, userId, isNoteOwner, noteOwnerId, onDeleted,
 }: {
   block: DecryptedBlock;
   noteId: string;
   userId: string;
+  isNoteOwner: boolean;
+  noteOwnerId: string;   // the note owner's user ID — for coloring their blocks green
+  onDeleted: (id: string) => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [value,   setValue]   = useState(block.text);
-  const [saving,  setSaving]  = useState(false);
+  const [hovered,  setHovered]  = useState(false);
+  const [editing,  setEditing]  = useState(false);
+  const [value,    setValue]    = useState(block.text);
+  const [saving,   setSaving]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const name  = (block as any).author_username ?? `User ${block.author_id.slice(0, 6)}`;
-  const color = authorColor(name);
-  const isMe  = block.author_id === userId;
+  const name   = (block as any).author_username ?? `User ${block.author_id.slice(0, 6)}`;
+  const isMe   = block.author_id === userId;
+  const isTemp = block.id.startsWith('temp-');
+
+  // Green for owner's blocks, unique hue per collaborator
+  const isBlockByOwner = noteOwnerId && block.author_id === noteOwnerId;
+  const color = isTemp
+    ? 'var(--sv-border-2)'
+    : isBlockByOwner
+      ? OWNER_BLOCK_COLOR
+      : collabColor(name);
+
+  const canDelete = !isTemp && (isNoteOwner || isMe);
+  const canEdit   = !isTemp && isMe;
+  const showIcons = hovered && !editing && !isTemp && (canEdit || canDelete);
 
   async function save() {
     const trimmed = value.trim();
-    if (!trimmed) { cancel(); return; }
+    if (!trimmed) { await handleDelete(); return; }
     if (trimmed === block.text) { setEditing(false); return; }
     setSaving(true);
     try {
@@ -109,107 +129,135 @@ function Segment({
     }
   }
 
-  function cancel() {
-    setValue(block.text);
-    setEditing(false);
+  async function handleDelete() {
+    if (isTemp) return;
+    setDeleting(true);
+    try {
+      await deleteBlock(noteId, block.id);
+      onDeleted(block.id);
+      toast.success('Contribution removed');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to delete');
+      setDeleting(false);
+    }
   }
+
+  function cancel() { setValue(block.text); setEditing(false); }
 
   return (
     <div
-      className="group relative"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        paddingLeft: 16,
-        paddingRight: 120,   // room for right-margin attribution
-        paddingBottom: 10,
+        display: 'flex', alignItems: 'flex-start', gap: 20,
+        paddingLeft: 14, paddingTop: 8, paddingBottom: 8, marginBottom: 4,
         borderLeft: `2px solid ${color}`,
-        marginBottom: 2,
+        opacity: isTemp || deleting ? 0.5 : 1,
+        transition: 'opacity 0.2s ease',
       }}
     >
-      {/* Content — click own block to edit */}
-      {editing ? (
-        <AutoTextarea
-          autoFocus
-          value={value}
-          onChange={setValue}
-          onBlur={save}
-          style={{
-            fontSize: 15,
-            lineHeight: 1.8,
-            color: 'var(--sv-text-2)',
-            caretColor: 'var(--sv-accent)',
-          }}
-        />
-      ) : (
-        <p
-          className="text-[15px] leading-[1.8] whitespace-pre-wrap"
-          style={{
-            color: 'var(--sv-text-2)',
-            cursor: isMe ? 'text' : 'default',
-          }}
-          onClick={() => isMe && setEditing(true)}
-        >
-          {block.text}
-        </p>
-      )}
-
-      {/* Right-margin attribution — always visible, subtle */}
-      <div
-        className="absolute top-0.5 right-0 flex items-center gap-1.5"
-        style={{ width: 112 }}
-      >
-        <div
-          style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }}
-        />
-        <div>
-          <p className="text-[11px] font-medium leading-tight" style={{ color }}>
-            {isMe ? 'You' : name}
-          </p>
-          <p className="text-[10px]" style={{ color: 'var(--sv-text-4)' }}>
-            {relDate(block.created_at)}
-          </p>
-        </div>
-
-        {/* Edit / saving indicator */}
-        {isMe && !editing && (
-          <button
-            onClick={() => setEditing(true)}
-            className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ml-0.5"
-            style={{ color: 'var(--sv-accent)' }}
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {editing ? (
+          <AutoTextarea
+            autoFocus
+            value={value}
+            onChange={setValue}
+            onBlur={save}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+              if (e.key === 'Escape') cancel();
+            }}
+            placeholder="Clear to delete…"
+            style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)' }}
+          />
+        ) : (
+          <p
+            onClick={() => canEdit && setEditing(true)}
+            style={{
+              fontSize: 15, lineHeight: 1.8, margin: 0,
+              color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap',
+              cursor: canEdit ? 'text' : 'default',
+            }}
           >
-            Edit
-          </button>
+            {block.text}
+          </p>
         )}
-        {editing && (
-          <span className="text-[10px]" style={{ color: 'var(--sv-text-4)' }}>
-            {saving ? 'Saving…' : '⌘↵'}
+      </div>
+
+      {/* Attribution + sliding icons */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, paddingTop: 4 }}>
+        <div style={{ width: 5, height: 5, borderRadius: '50%', flexShrink: 0, background: color }} />
+        <span style={{ fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', color }}>
+          {isTemp ? 'Saving…' : (isMe ? 'You' : name)}
+        </span>
+        {!isTemp && (
+          <span style={{ fontSize: 11, color: 'var(--sv-text-4)', whiteSpace: 'nowrap' }}>
+            · {relDate(block.created_at)}
           </span>
         )}
+        {editing && (
+          <>
+            <span style={{ fontSize: 10, color: 'var(--sv-text-4)', marginLeft: 4 }}>
+              {saving ? 'Saving…' : '⌘↵'}
+            </span>
+            <button onClick={cancel} style={{ fontSize: 10, color: 'var(--sv-text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              esc
+            </button>
+          </>
+        )}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', flexShrink: 0,
+          maxWidth: showIcons ? 52 : 0, opacity: showIcons ? 1 : 0,
+          transition: 'max-width 0.18s ease, opacity 0.12s ease',
+        }}>
+          {canEdit && (
+            <button onClick={() => setEditing(true)} title="Edit"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', display: 'flex', alignItems: 'center' }}>
+              <i className="ti ti-pencil" style={{ fontSize: 12, color: 'var(--sv-accent)' }} />
+            </button>
+          )}
+          {canDelete && (
+            <button onClick={handleDelete} disabled={deleting} title="Delete"
+              style={{ background: 'none', border: 'none', cursor: deleting ? 'default' : 'pointer', padding: '2px 0', display: 'flex', alignItems: 'center', opacity: deleting ? 0.4 : 1 }}>
+              <i className={`ti ${deleting ? 'ti-loader-2 animate-spin' : 'ti-trash'}`} style={{ fontSize: 12, color: 'var(--sv-danger)' }} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Main NoteEditor ───────────────────────────────────────────────────────────
-
+// ── Main editor ───────────────────────────────────────────────────────────────
 export default function NoteEditor({
   note, blocks, editTitle, editContent,
   folders, userId, isOwner,
   onTitleChange, onContentChange, onSave,
-  onAddBlock,
+  onAddBlock, onDeleteBlock,
 }: NoteEditorProps) {
   const folderName = folders.find((f) => f.id === note.folder_id)?.name;
   const isShared   = note.type === 'shared';
+
+  // note.owner_id is returned by the backend via n.* — cast since type may not declare it
+  const noteOwnerId = (note as any).owner_id ?? '';
+
+  const [editingOriginal, setEditingOriginal] = useState(false);
+  const [hoveredOriginal, setHoveredOriginal] = useState(false);
+  const showOriginalEdit  = isOwner && hoveredOriginal && !editingOriginal;
 
   const [contribution, setContribution] = useState('');
   const [adding,       setAdding]       = useState(false);
 
   async function handleContribute() {
     const text = contribution.trim();
-    if (!text) return;
+    if (!text || adding) return;
+    setContribution('');
     setAdding(true);
     try {
       await onAddBlock(text);
-      setContribution('');
+    } catch {
+      setContribution(text);
     } finally {
       setAdding(false);
     }
@@ -228,10 +276,8 @@ export default function NoteEditor({
               : { background: 'rgba(255,255,255,0.06)', color: 'var(--sv-text-3)', border: '1px solid var(--sv-border-2)' }
           }
         >
-          <i className={`ti ${isShared ? 'ti-users' : 'ti-lock'}`} style={{ fontSize: 12 }} aria-hidden="true" />
-          {isShared
-            ? (isOwner ? 'Shared by you' : 'Shared with you')
-            : 'Private note'}
+          <i className={`ti ${isShared ? 'ti-users' : 'ti-lock'}`} style={{ fontSize: 12 }} />
+          {isShared ? (isOwner ? 'Shared by you' : 'Shared with you') : 'Private note'}
         </span>
       </div>
 
@@ -242,125 +288,152 @@ export default function NoteEditor({
         onBlur={onSave}
         placeholder="Untitled"
         style={{
-          fontSize: 30,
-          fontWeight: 600,
-          letterSpacing: '-0.5px',
-          color: 'var(--sv-text)',
-          caretColor: 'var(--sv-accent)',
-          marginBottom: 8,
-          lineHeight: 1.25,
+          fontSize: 30, fontWeight: 600, letterSpacing: '-0.5px',
+          color: 'var(--sv-text)', caretColor: 'var(--sv-accent)',
+          marginBottom: 8, lineHeight: 1.25,
         }}
       />
 
       {/* Meta */}
-      <div className="flex items-center gap-2 mb-8">
-        <span className="text-[12px]" style={{ color: 'var(--sv-text-4)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 32 }}>
+        <span style={{ fontSize: 12, color: 'var(--sv-text-4)' }}>
           {folderName ? `${folderName} · ` : ''}
           {new Date(note.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         </span>
-        <i className="ti ti-lock" style={{ fontSize: 11, color: 'var(--sv-text-4)' }} aria-hidden="true" />
+        <i className="ti ti-lock" style={{ fontSize: 11, color: 'var(--sv-text-4)' }} />
       </div>
 
-      {/* ── Document body ───────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col" style={{ maxWidth: 720 }}>
+      {/* Document body */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
 
-        {/* Original note content — always editable by owner */}
+        {/* ── Original note content ─────────────────────────────────────────── */}
         {isShared ? (
-          /* Shared: show as attributed segment */
+          /* Amber border = the original note body */
           <div
-            className="relative"
+            onMouseEnter={() => setHoveredOriginal(true)}
+            onMouseLeave={() => setHoveredOriginal(false)}
             style={{
-              paddingLeft: 16,
-              paddingRight: 120,
-              paddingBottom: 10,
-              borderLeft: '2px solid var(--sv-accent)',
-              marginBottom: 2,
+              display: 'flex', alignItems: 'flex-start', gap: 20,
+              paddingLeft: 14, paddingTop: 8, paddingBottom: 8, marginBottom: 4,
+              borderLeft: `2px solid ${ORIGINAL_COLOR}`,
             }}
           >
-            <p
-              className="text-[15px] leading-[1.8] whitespace-pre-wrap"
-              style={{ color: 'var(--sv-text-2)' }}
-            >
-              {editContent || <span style={{ color: 'var(--sv-text-4)', fontStyle: 'italic' }}>No content</span>}
-            </p>
-            {/* Right-margin owner attribution */}
-            <div className="absolute top-0.5 right-0 flex items-center gap-1.5" style={{ width: 112 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--sv-accent)', flexShrink: 0 }} />
-              <div>
-                <p className="text-[11px] font-medium leading-tight" style={{ color: 'var(--sv-accent)' }}>
-                  {isOwner ? 'You' : 'Owner'}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {editingOriginal ? (
+                <AutoTextarea
+                  autoFocus
+                  value={editContent}
+                  onChange={onContentChange}
+                  onBlur={() => { onSave(); setEditingOriginal(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(); setEditingOriginal(false); }
+                    if (e.key === 'Escape') setEditingOriginal(false);
+                  }}
+                  style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)' }}
+                />
+              ) : (
+                <p
+                  onClick={() => isOwner && setEditingOriginal(true)}
+                  style={{
+                    fontSize: 15, lineHeight: 1.8, margin: 0,
+                    color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap',
+                    cursor: isOwner ? 'text' : 'default',
+                  }}
+                >
+                  {editContent || <span style={{ color: 'var(--sv-text-4)', fontStyle: 'italic' }}>No content</span>}
                 </p>
-                <p className="text-[10px]" style={{ color: 'var(--sv-text-4)' }}>
-                  {relDate(note.updated_at)}
-                </p>
-              </div>
+              )}
+            </div>
+
+            {/* Attribution */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, paddingTop: 4 }}>
+              <div style={{ width: 5, height: 5, borderRadius: '50%', background: ORIGINAL_COLOR }} />
+              <span style={{ fontSize: 11, fontWeight: 500, color: ORIGINAL_COLOR, whiteSpace: 'nowrap' }}>
+                {isOwner ? 'You' : 'Owner'}
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--sv-text-4)', whiteSpace: 'nowrap' }}>
+                · {relDate(note.updated_at)}
+              </span>
+              {editingOriginal && (
+                <>
+                  <span style={{ fontSize: 10, color: 'var(--sv-text-4)', marginLeft: 4 }}>⌘↵ save</span>
+                  <button onClick={() => setEditingOriginal(false)} style={{ fontSize: 10, color: 'var(--sv-text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>esc</button>
+                </>
+              )}
+              {/* Sliding edit icon */}
+              {isOwner && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', overflow: 'hidden', flexShrink: 0,
+                  maxWidth: showOriginalEdit ? 28 : 0,
+                  opacity: showOriginalEdit ? 1 : 0,
+                  transition: 'max-width 0.18s ease, opacity 0.12s ease',
+                }}>
+                  <button onClick={() => setEditingOriginal(true)} title="Edit original"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' }}>
+                    <i className="ti ti-pencil" style={{ fontSize: 12, color: ORIGINAL_COLOR }} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+
         ) : (
-          /* Private: full editable textarea */
+          /* Private note — full editable textarea, no border treatment */
           <AutoTextarea
             value={editContent}
             onChange={onContentChange}
             onBlur={onSave}
             placeholder="Start writing…"
             style={{
-              fontSize: 15,
-              lineHeight: 1.8,
-              color: 'var(--sv-text-2)',
-              caretColor: 'var(--sv-accent)',
-              flex: 1,
-              minHeight: 200,
+              fontSize: 15, lineHeight: 1.8,
+              color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)',
+              flex: 1, minHeight: 200,
             }}
           />
         )}
 
-        {/* ── Contribution segments ──────────────────────────────────────────── */}
+        {/* Contribution segments */}
         {isShared && blocks.length > 0 && (
-          <div className="mt-0">
+          <div>
             {blocks.map((block) => (
               <Segment
                 key={block.id}
                 block={block}
                 noteId={note.id}
                 userId={userId}
+                isNoteOwner={isOwner}
+                noteOwnerId={noteOwnerId}
+                onDeleted={onDeleteBlock}
               />
             ))}
           </div>
         )}
 
-        {/* ── Inline contribution input ──────────────────────────────────────── */}
+        {/* ── Contribution input — plain, no box ───────────────────────────── */}
         {isShared && (
-          <div
-            className="mt-4"
-            style={{ borderTop: '1px solid var(--sv-border)', paddingTop: 16 }}
-          >
+          <div style={{
+            marginTop: 16,
+            paddingTop: 16,
+            borderTop: '1px solid var(--sv-border)',
+          }}>
             <AutoTextarea
               value={contribution}
               onChange={setContribution}
-              placeholder={adding ? 'Saving…' : 'Continue writing…'}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleContribute(); }
+              }}
+              placeholder="Write here…   ↵ save   ⇧↵ new line"
               style={{
-                fontSize: 15,
-                lineHeight: 1.8,
-                color: 'var(--sv-text-2)',
-                caretColor: 'var(--sv-accent)',
-                minHeight: 40,
-                opacity: adding ? 0.5 : 1,
+                fontSize: 15, lineHeight: 1.8,
+                color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)',
+                minHeight: 36, opacity: adding ? 0.5 : 1,
               }}
             />
+            {/* Minimal keyboard hint — no button */}
             {contribution.trim() && (
-              <div className="flex items-center justify-end gap-3 mt-2">
-                <span className="text-[11px]" style={{ color: 'var(--sv-text-4)' }}>
-                  Enter to save · Shift+Enter for new line
-                </span>
-                <button
-                  onClick={handleContribute}
-                  disabled={adding}
-                  className="px-3 py-1 rounded-lg text-[12px] font-medium transition-opacity disabled:opacity-50"
-                  style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
-                >
-                  {adding ? 'Saving…' : 'Save'}
-                </button>
-              </div>
+              <p style={{ fontSize: 10, color: 'var(--sv-text-4)', marginTop: 6, textAlign: 'right' }}>
+                ↵ save · ⇧↵ new line
+              </p>
             )}
           </div>
         )}

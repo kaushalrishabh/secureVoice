@@ -324,7 +324,7 @@ router.post('/:id/blocks', asyncHandler(async (req: AuthRequest, res: Response) 
     );
     
     return res.status(201).json({
-        block: {
+        blocks: {
         ...(rows as any[])[0],
         author_username: req.user!.username,
         },
@@ -396,4 +396,36 @@ router.put('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res: Re
     
     return res.json({ message: 'Block updated' });
 }));
+
+/**
+ * DELETE /api/notes/:id/blocks/:blockId
+ * Lets the author + shared owner delete their own block.
+ * Body: { content_iv, content_cipher }
+ */
+
+router.delete('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Check note access + role
+  const [accessRows] = await pool.query(
+    `SELECT role FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+    [req.params.id, req.user!.id],
+  );
+  const access = (accessRows as any[])[0];
+  if (!access) return res.status(403).json({ error: 'No access to this note' });
+
+  const [rows] = await pool.query(
+    `SELECT id, author_id FROM note_blocks WHERE id = ? AND note_id = ? LIMIT 1`,
+    [req.params.blockId, req.params.id],
+  );
+  const block = (rows as any[])[0];
+  if (!block) return res.status(404).json({ error: 'Block not found' });
+
+  // Owner can delete any block — editors only their own
+  if (access.role !== 'owner' && block.author_id !== req.user!.id) {
+    return res.status(403).json({ error: 'You can only delete your own contributions' });
+  }
+
+  await pool.query(`DELETE FROM note_blocks WHERE id = ?`, [block.id]);
+  return res.status(204).send();
+}));
+
 export default router;

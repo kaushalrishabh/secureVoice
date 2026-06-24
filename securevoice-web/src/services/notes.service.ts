@@ -326,3 +326,7 @@ export async function updateBlock(
     body: JSON.stringify({ content_iv, content_cipher }),
   });
 }
+
+export async function deleteBlock(noteId: string, blockId: string): Promise<void> {
+  await apiFetch(`/api/notes/${noteId}/blocks/${blockId}`, { method: 'DELETE' });
+}
