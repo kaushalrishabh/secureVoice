@@ -241,10 +241,12 @@ export async function saveNote(
  
 // ── Pin / unpin convenience ───────────────────────────────────────────────────
  
-export function pinNote(noteId: string, pinned: boolean): Promise<void> {
-  return saveNote(noteId, { pinned });
+export async function pinNote(noteId: string, pinned: boolean): Promise<void> {
+  await apiFetch(`/api/notes/${noteId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ pinned }),
+  });
 }
-
 /** Returns the cached note_DEK for a note — needed externally for sharing. */
 export function getCachedNoteDEK(noteId: string): CryptoKey | null {
   return noteDEKCache.get(noteId) ?? null;
@@ -329,4 +331,15 @@ export async function updateBlock(
 
 export async function deleteBlock(noteId: string, blockId: string): Promise<void> {
   await apiFetch(`/api/notes/${noteId}/blocks/${blockId}`, { method: 'DELETE' });
+}
+
+
+export async function moveNoteToFolder(
+  noteId: string,
+  folderId: string | null,
+): Promise<void> {
+  await apiFetch(`/api/notes/${noteId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ folder_id: folderId }),
+  });
 }
