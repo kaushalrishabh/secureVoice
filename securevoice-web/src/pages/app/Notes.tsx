@@ -7,6 +7,7 @@ import { signOut } from '../../services/auth.service';
 import {
   listNotes, fetchNote, createNote, saveNote, deleteNote,
   fetchDecryptedBlocks, addBlock, getCachedNoteDEK,
+  pinNote, moveNoteToFolder,
   type DecryptedNote, type DecryptedBlock,
 } from '../../services/notes.service';
 import { shareNote } from '../../services/invites.service';
@@ -277,6 +278,39 @@ export default function Notes() {
     navigate('/login');
   }
 
+  async function handlePinNote(note: DecryptedNote) {
+    const newPinned = !note.pinned;
+    // Optimistic update
+    setNotes((p) => p.map((n) => n.id === note.id ? { ...n, pinned: newPinned } : n));
+    if (selectedNote?.id === note.id) {
+      setSelectedNote((p) => p ? { ...p, pinned: newPinned } : null);
+    }
+    try {
+      await pinNote(note.id, newPinned);
+      toast.success(newPinned ? 'Note pinned' : 'Note unpinned');
+    } catch (err: any) {
+      // Revert on failure
+      setNotes((p) => p.map((n) => n.id === note.id ? { ...n, pinned: note.pinned } : n));
+      toast.error(err.message ?? 'Failed to update pin');
+    }
+  }
+  
+  async function handleMoveToFolder(note: DecryptedNote, folderId: string | null) {
+    // Optimistic update
+    setNotes((p) => p.map((n) => n.id === note.id ? { ...n, folder_id: folderId } : n));
+    if (selectedNote?.id === note.id) {
+      setSelectedNote((p) => p ? { ...p, folder_id: folderId } : null);
+    }
+    try {
+      await moveNoteToFolder(note.id, folderId);
+      const name = folders.find((f) => f.id === folderId)?.name;
+      toast.success(folderId ? `Moved to ${name}` : 'Removed from folder');
+    } catch (err: any) {
+      // Revert on failure
+      setNotes((p) => p.map((n) => n.id === note.id ? { ...n, folder_id: note.folder_id } : n));
+      toast.error(err.message ?? 'Failed to move note');
+    }
+  }
   // ── Filter + sort ─────────────────────────────────────────────────────────
   const sortedNotes = [...notes]
     .filter((n) => {
@@ -323,11 +357,14 @@ export default function Notes() {
         {/* Notes list */}
         <NotesList
           notes={sortedNotes}
+          folders={folders}
           loading={loading}
           selectedId={selectedId}
           search={search}
           onSearch={setSearch}
           onSelect={openNote}
+          onPin={handlePinNote}
+          onMoveToFolder={handleMoveToFolder}
           onShare={(note) => {
             setSelectedId(note.id);
             setShowShare(true);
