@@ -1,89 +1,173 @@
+import { useState, useRef, useEffect } from 'react';
 import type { DecryptedNote } from '../../services/notes.service';
 import type { User } from '../../types';
 
 interface NoteFooterProps {
   note: DecryptedNote;
   user: User | null;
-  blockText: string;
-  addingBlock: boolean;
-  onBlockTextChange: (v: string) => void;
-  onAddBlock: () => void;
+  onAddBlock: (text: string) => Promise<void>;
 }
 
 function initials(str: string) {
   return (str ?? '').slice(0, 2).toUpperCase();
 }
 
-export default function NoteFooter({
-  note, user, blockText, addingBlock,
-  onBlockTextChange, onAddBlock,
-}: NoteFooterProps) {
+function GrowTextarea({
+  value, onChange, onKeyDown, placeholder, disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = 'auto';
+      ref.current.style.height = Math.min(ref.current.scrollHeight, 120) + 'px';
+    }
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      placeholder={placeholder}
+      disabled={disabled}
+      rows={1}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        resize: 'none',
+        overflow: 'hidden',
+        background: 'transparent',
+        border: 'none',
+        outline: 'none',
+        boxShadow: 'none',
+        padding: 0,
+        margin: 0,
+        fontSize: 14,
+        lineHeight: 1.7,
+        color: disabled ? 'var(--sv-text-4)' : 'var(--sv-text-2)',
+        caretColor: 'var(--sv-accent)',
+        maxHeight: 120,
+      }}
+    />
+  );
+}
+
+export default function NoteFooter({ note, user, onAddBlock }: NoteFooterProps) {
   const isShared = note.type === 'shared';
+  const [text,   setText]   = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const userInitials = initials(
+    (user?.first_name ?? '') + (user?.last_name ?? '') || (user?.username ?? 'U'),
+  );
+
+  async function submit() {
+    const trimmed = text.trim();
+    if (!trimmed || adding) return;
+    setText('');
+    setAdding(true);
+    try {
+      await onAddBlock(trimmed);
+    } catch {
+      setText(trimmed);
+    } finally {
+      setAdding(false);
+    }
+  }
 
   return (
     <div
-      className="flex items-center gap-3 px-6 py-3.5 flex-shrink-0"
-      style={{ borderTop: '1px solid var(--sv-border-3)', background: 'var(--sv-brand)' }}
+      style={{
+        flexShrink: 0,
+        /* box-sizing: border-box makes padding subtract from width
+           instead of adding to it — without this the 20px padding on
+           each side makes the div wider than the parent container     */
+        boxSizing: 'border-box',
+        width: '100%',
+        minWidth: 0,          // prevents flex children from exceeding parent
+        overflow: 'hidden',   // clips anything that still manages to overflow
+        borderTop: '1px solid var(--sv-border-3)',
+        background: 'var(--sv-brand)',
+        padding: '12px 20px',
+      }}
     >
-      {/* User avatar */}
-      <div
-        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-        style={{ background: 'var(--sv-accent)' }}
-      >
-        <span className="text-[11px] font-medium" style={{ color: 'var(--sv-bg)' }}>
-          {initials((user?.first_name ?? '') + (user?.last_name ?? '') || (user?.username ?? 'U'))}
-        </span>
-      </div>
+      {isShared ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          minWidth: 0,        // same fix on the inner row
+          overflow: 'hidden',
+        }}>
+          {/* Avatar */}
+          <div style={{
+            width: 26, height: 26, borderRadius: '50%',
+            flexShrink: 0, marginTop: 3,
+            background: 'var(--sv-accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--sv-bg)' }}>{userInitials}</span>
+          </div>
 
-      {/* Input */}
-      <input
-        value={blockText}
-        onChange={(e) => onBlockTextChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && isShared) {
-            e.preventDefault();
-            onAddBlock();
-          }
-        }}
-        placeholder={
-          isShared
-            ? 'Add a contribution… press Enter to send'
-            : 'Voice input — coming in Phase 4'
-        }
-        disabled={!isShared || addingBlock}
-        className="flex-1 bg-transparent text-[14px]"
-        style={{
-          color: 'var(--sv-text)',
-          outline: 'none',
-          border: 'none',
-          opacity: isShared ? 1 : 0.4,
-          cursor: isShared ? 'text' : 'not-allowed',
-        }}
-      />
+          <GrowTextarea
+            value={text}
+            onChange={setText}
+            placeholder={adding ? 'Saving…' : 'Write here…   ↵ save   ⇧↵ new line'}
+            disabled={adding}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+            }}
+          />
 
-      {/* Send + mic */}
-      <div className="flex items-center gap-2">
-        {isShared && blockText.trim() && (
-          <button
-            onClick={onAddBlock}
-            disabled={addingBlock}
-            className="p-2 rounded-lg transition-opacity disabled:opacity-40 hover:opacity-70"
-          >
-            <i className="ti ti-send" style={{ fontSize: 17, color: 'var(--sv-accent)' }} aria-hidden="true" />
+          {text.trim() && (
+            <button
+              onClick={submit}
+              disabled={adding}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                flexShrink: 0, padding: '2px 0', marginTop: 3,
+                display: 'flex', alignItems: 'center',
+                opacity: adding ? 0.4 : 1,
+              }}
+            >
+              <i className="ti ti-send" style={{ fontSize: 16, color: 'var(--sv-accent)' }} />
+            </button>
+          )}
+        </div>
+
+      ) : (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          minWidth: 0, overflow: 'hidden',
+        }}>
+          <div style={{
+            width: 26, height: 26, borderRadius: '50%',
+            flexShrink: 0,
+            background: 'var(--sv-accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--sv-bg)' }}>{userInitials}</span>
+          </div>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: 'var(--sv-text-4)' }}>
+            Voice input — coming in Phase 4
+          </span>
+          <button disabled style={{
+            width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+            background: 'var(--sv-accent)', border: 'none',
+            opacity: 0.35, cursor: 'not-allowed',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <i className="ti ti-microphone" style={{ fontSize: 14, color: 'var(--sv-bg)' }} />
           </button>
-        )}
-        <button
-          className="w-9 h-9 rounded-full flex items-center justify-center"
-          style={{
-            background: isShared ? 'var(--sv-accent)' : 'var(--sv-surface)',
-            opacity: isShared ? 1 : 0.4,
-          }}
-          title="Voice input — Phase 4"
-          disabled={!isShared}
-        >
-          <i className="ti ti-microphone" style={{ fontSize: 17, color: isShared ? 'var(--sv-bg)' : 'var(--sv-text-3)' }} aria-hidden="true" />
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

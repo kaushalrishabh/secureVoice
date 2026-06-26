@@ -20,7 +20,7 @@ import Sidebar    from '../../components/layout/Sidebar.tsx';
 import NotesList  from '../../components/notes/NotesList.tsx';
 import Navbar     from '../../components/layout/Navbar.tsx';
 import NoteEditor from '../../components/notes/NoteEditor.tsx';
-import NoteFooter from '../../components/notes/NoteFooter.tsx';
+import NoteFooter from '../../components/notes/NoteFooter';
 import Modal      from '../../components/ui/Modal.tsx';
 import FloatingInput from '../../components/ui/FloatingInput';
 import PendingInvitesBanner from '../../components/notes/PendingInvitesBanner.tsx';
@@ -132,7 +132,7 @@ export default function Notes() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  async function openNote(id: string) {
+    async function openNote(id: string) {
     if (id === selectedId) return;
     if (hasChanges && selectedId) {
       await handleSaveNote().catch(() => {});
@@ -142,14 +142,14 @@ export default function Notes() {
     setNoteLoading(true);
     setBlocks([]);
     setHasChanges(false);
+
     try {
       const note = await fetchNote(id);
       setSelectedNote(note);
+      setEditTitle(note.title || '');       // ← ADD: set directly, not only via useEffect
+      setEditContent(note.content || '');   // ← ADD: same
       if (note.type === 'shared') {
         setBlocks(await fetchDecryptedBlocks(id));
-      }
-      else {
-        setBlocks([]);
       }
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to open note');
@@ -242,7 +242,7 @@ export default function Notes() {
   }
 
   const handleOnBlockAdd = async (text: string) => {
-    if(!selectedNote) return;
+    if (!selectedNote) return;
 
     const tempId = `temp-${Date.now()}`;
     const optimisticBlock: DecryptedBlock = {
@@ -252,21 +252,23 @@ export default function Notes() {
       text,
       created_at: new Date().toISOString(),
     };
+
     flushSync(() => {
       setBlocks((p) => [...p, optimisticBlock]);
     });
 
-
     try {
-      const real = await addBlock(selectedNote?.id, text);
-      console.log("real",  real)
+      const real = await addBlock(selectedNote.id, text);
+      const now  = new Date().toISOString();
       setBlocks((p) => p.map((b) => b.id === tempId ? real : b));
-    } 
-    catch (err: any) {
+      // ← ADD: update the note's timestamp
+      setSelectedNote((p) => p ? { ...p, updated_at: now } : null);
+      setNotes((p) => p.map((n) => n.id === selectedNote.id ? { ...n, updated_at: now } : n));
+    } catch (err: any) {
       setBlocks((p) => p.filter((b) => b.id !== tempId));
-      throw err; 
+      throw err;
     }
-  }
+  };
 
   function handleOnBlockDelete(blockId: string) {
     setBlocks((p) => p.filter((b) => b.id !== blockId));
@@ -278,35 +280,40 @@ export default function Notes() {
     navigate('/login');
   }
 
+  async function handleCreateFolder(name: string, color: string) {
+    try {
+      const { folder } = await apiFetch<{ folder: Folder }>('/api/folders', {
+        method: 'POST',
+        body: JSON.stringify({ name, color }),
+      });
+      setFolders((p) => [...p, folder]);
+      toast.success(`Folder "${name}" created`);
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to create folder');
+    }
+  }
+
   async function handlePinNote(note: DecryptedNote) {
     const newPinned = !note.pinned;
-    // Optimistic update
     setNotes((p) => p.map((n) => n.id === note.id ? { ...n, pinned: newPinned } : n));
-    if (selectedNote?.id === note.id) {
-      setSelectedNote((p) => p ? { ...p, pinned: newPinned } : null);
-    }
+    if (selectedNote?.id === note.id) setSelectedNote((p) => p ? { ...p, pinned: newPinned } : null);
     try {
       await pinNote(note.id, newPinned);
       toast.success(newPinned ? 'Note pinned' : 'Note unpinned');
     } catch (err: any) {
-      // Revert on failure
       setNotes((p) => p.map((n) => n.id === note.id ? { ...n, pinned: note.pinned } : n));
       toast.error(err.message ?? 'Failed to update pin');
     }
   }
-  
+
   async function handleMoveToFolder(note: DecryptedNote, folderId: string | null) {
-    // Optimistic update
     setNotes((p) => p.map((n) => n.id === note.id ? { ...n, folder_id: folderId } : n));
-    if (selectedNote?.id === note.id) {
-      setSelectedNote((p) => p ? { ...p, folder_id: folderId } : null);
-    }
+    if (selectedNote?.id === note.id) setSelectedNote((p) => p ? { ...p, folder_id: folderId } : null);
     try {
       await moveNoteToFolder(note.id, folderId);
       const name = folders.find((f) => f.id === folderId)?.name;
       toast.success(folderId ? `Moved to ${name}` : 'Removed from folder');
     } catch (err: any) {
-      // Revert on failure
       setNotes((p) => p.map((n) => n.id === note.id ? { ...n, folder_id: note.folder_id } : n));
       toast.error(err.message ?? 'Failed to move note');
     }
@@ -352,6 +359,7 @@ export default function Notes() {
           onFolderChange={setActiveFolderId}
           onNewNote={() => { setIsCreating(true); setSelectedId(null); setSelectedNote(null); setNewTitle(''); setNewContent(''); }}
           onSignOut={handleSignOut}
+          onCreateFolder={handleCreateFolder}
         />
 
         {/* Notes list */}
@@ -385,6 +393,7 @@ export default function Notes() {
             isCreating={isCreating}
             hasChanges={hasChanges}
             saving={saving}
+            updatedAt={selectedNote?.updated_at}   // ← ADD this prop
             onShare={() => { setShowShare(true); setShareSuccess(false); setShareEmail(''); }}
             onDelete={() => { if (selectedNote) { setDeleteTarget(selectedNote); setShowDelete(true); } }}
             onSave={handleSaveNote}
@@ -433,33 +442,26 @@ export default function Notes() {
             </div>
 
          ) : selectedNote ? (
-            <>
-              <NoteEditor
-                note={selectedNote}
-                blocks={blocks}
-                editTitle={editTitle}
-                editContent={editContent}
-                folders={folders}
-                userId={user?.id ?? ''}
-                isOwner={selectedNote.role === 'owner'}
-                onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
-                onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
-                onSave={handleSaveNote}
-                onAddBlock={handleOnBlockAdd}
-                onDeleteBlock = {handleOnBlockDelete}
-              />
-              {/* Footer only for private notes — mic button for Phase 4 voice input */}
-              {selectedNote.type !== 'shared' && (
-                <NoteFooter
-                  note={selectedNote}
-                  user={user}
-                  blockText={blockText}
-                  addingBlock={addingBlock}
-                  onBlockTextChange={setBlockText}
-                  onAddBlock={handleAddBlock}
-                />
-              )}
-            </>
+          <>
+            <NoteEditor
+              note={selectedNote}
+              blocks={blocks}
+              editTitle={editTitle}
+              editContent={editContent}
+              folders={folders}
+              userId={user?.id ?? ''}
+              isOwner={selectedNote.role === 'owner'}
+              onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
+              onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
+              onSave={handleSaveNote}
+              onDeleteBlock={handleOnBlockDelete}
+            />
+            <NoteFooter
+              note={selectedNote}
+              user={user}
+              onAddBlock={handleOnBlockAdd}
+            />
+          </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-5">
               <div className="w-18 h-18 rounded-2xl flex items-center justify-center"

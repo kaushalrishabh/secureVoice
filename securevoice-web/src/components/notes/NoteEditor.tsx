@@ -15,18 +15,11 @@ interface NoteEditorProps {
   onTitleChange: (v: string) => void;
   onContentChange: (v: string) => void;
   onSave: () => void;
-  onAddBlock: (text: string) => Promise<void>;
   onDeleteBlock: (blockId: string) => void;
 }
 
-// ── Semantic color scheme ─────────────────────────────────────────────────────
-// Amber   #F59E0B  → original note body  (the note itself)
-// Green   #22C55E  → note owner's blocks (their additions)
-// Dynamic          → each collaborator gets a unique hue
 const OWNER_BLOCK_COLOR = '#22C55E';
 const ORIGINAL_COLOR    = '#F59E0B';
-
-// Exclude amber + green from collaborator palette so they don't clash
 const COLLAB_COLORS = ['#06B6D4', '#8B5CF6', '#F97316', '#EC4899', '#3B82F6', '#A855F7'];
 
 function collabColor(seed: string) {
@@ -42,7 +35,6 @@ function relDate(d: string) {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// ── Auto-growing textarea ─────────────────────────────────────────────────────
 function AutoTextarea({
   value, onChange, onBlur, onKeyDown, placeholder, autoFocus, style,
 }: {
@@ -88,7 +80,7 @@ function Segment({
   noteId: string;
   userId: string;
   isNoteOwner: boolean;
-  noteOwnerId: string;   // the note owner's user ID — for coloring their blocks green
+  noteOwnerId: string;
   onDeleted: (id: string) => void;
 }) {
   const [hovered,  setHovered]  = useState(false);
@@ -101,13 +93,10 @@ function Segment({
   const isMe   = block.author_id === userId;
   const isTemp = block.id.startsWith('temp-');
 
-  // Green for owner's blocks, unique hue per collaborator
   const isBlockByOwner = noteOwnerId && block.author_id === noteOwnerId;
-  const color = isTemp
-    ? 'var(--sv-border-2)'
-    : isBlockByOwner
-      ? OWNER_BLOCK_COLOR
-      : collabColor(name);
+  const color = isTemp ? 'var(--sv-border-2)'
+    : isBlockByOwner ? OWNER_BLOCK_COLOR
+    : collabColor(name);
 
   const canDelete = !isTemp && (isNoteOwner || isMe);
   const canEdit   = !isTemp && isMe;
@@ -156,36 +145,27 @@ function Segment({
         transition: 'opacity 0.2s ease',
       }}
     >
-      {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {editing ? (
           <AutoTextarea
-            autoFocus
-            value={value}
-            onChange={setValue}
-            onBlur={save}
+            autoFocus value={value} onChange={setValue} onBlur={save}
+            placeholder="Clear to delete…"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
               if (e.key === 'Escape') cancel();
             }}
-            placeholder="Clear to delete…"
             style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)' }}
           />
         ) : (
           <p
             onClick={() => canEdit && setEditing(true)}
-            style={{
-              fontSize: 15, lineHeight: 1.8, margin: 0,
-              color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap',
-              cursor: canEdit ? 'text' : 'default',
-            }}
+            style={{ fontSize: 15, lineHeight: 1.8, margin: 0, color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap', cursor: canEdit ? 'text' : 'default' }}
           >
             {block.text}
           </p>
         )}
       </div>
 
-      {/* Attribution + sliding icons */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, paddingTop: 4 }}>
         <div style={{ width: 5, height: 5, borderRadius: '50%', flexShrink: 0, background: color }} />
         <span style={{ fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', color }}>
@@ -233,82 +213,61 @@ function Segment({
 export default function NoteEditor({
   note, blocks, editTitle, editContent,
   folders, userId, isOwner,
-  onTitleChange, onContentChange, onSave,
-  onAddBlock, onDeleteBlock,
+  onTitleChange, onContentChange, onSave, onDeleteBlock,
 }: NoteEditorProps) {
-  const folderName = folders.find((f) => f.id === note.folder_id)?.name;
-  const isShared   = note.type === 'shared';
-
-  // note.owner_id is returned by the backend via n.* — cast since type may not declare it
+  const folderName  = folders.find((f) => f.id === note.folder_id)?.name;
+  const isShared    = note.type === 'shared';
   const noteOwnerId = (note as any).owner_id ?? '';
 
   const [editingOriginal, setEditingOriginal] = useState(false);
   const [hoveredOriginal, setHoveredOriginal] = useState(false);
-  const showOriginalEdit  = isOwner && hoveredOriginal && !editingOriginal;
-
-  const [contribution, setContribution] = useState('');
-  const [adding,       setAdding]       = useState(false);
-
-  async function handleContribute() {
-    const text = contribution.trim();
-    if (!text || adding) return;
-    setContribution('');
-    setAdding(true);
-    try {
-      await onAddBlock(text);
-    } catch {
-      setContribution(text);
-    } finally {
-      setAdding(false);
-    }
-  }
+  const showOriginalEdit = isOwner && hoveredOriginal && !editingOriginal;
 
   return (
-    <div className="flex-1 overflow-y-auto flex flex-col" style={{ padding: '28px 40px' }}>
-
-      {/* Privacy badge */}
-      <div className="mb-5">
-        <span
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
-          style={
-            isShared
-              ? { background: 'rgba(6,182,212,0.12)', color: 'var(--sv-blue)', border: '1px solid rgba(6,182,212,0.35)' }
-              : { background: 'rgba(255,255,255,0.06)', color: 'var(--sv-text-3)', border: '1px solid var(--sv-border-2)' }
-          }
-        >
-          <i className={`ti ${isShared ? 'ti-users' : 'ti-lock'}`} style={{ fontSize: 12 }} />
-          {isShared ? (isOwner ? 'Shared by you' : 'Shared with you') : 'Private note'}
-        </span>
-      </div>
-
-      {/* Title */}
-      <AutoTextarea
-        value={editTitle}
-        onChange={onTitleChange}
-        onBlur={onSave}
-        placeholder="Untitled"
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+      <div
         style={{
-          fontSize: 30, fontWeight: 600, letterSpacing: '-0.5px',
-          color: 'var(--sv-text)', caretColor: 'var(--sv-accent)',
-          marginBottom: 8, lineHeight: 1.25,
+          flexShrink: 0,
+          padding: '16px 20px 12px',
+          borderBottom: '1px solid var(--sv-border)',
+          background: 'var(--sv-bg)',
         }}
-      />
+      >
+        <input
+          value={editTitle}
+          onChange={(e) => onTitleChange(e.target.value)}
+          onBlur={onSave}
+          placeholder="Untitled"
+          style={{
+            display: 'block',
+            width: '100%',
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            boxShadow: 'none',
+            padding: 0,
+            fontSize: 26,
+            fontWeight: 600,
+            letterSpacing: '-0.4px',
+            color: 'var(--sv-text)',
+            caretColor: 'var(--sv-accent)',
+            lineHeight: 1.3,
+          }}
+        />
 
-      {/* Meta */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 32 }}>
-        <span style={{ fontSize: 12, color: 'var(--sv-text-4)' }}>
-          {folderName ? `${folderName} · ` : ''}
-          {new Date(note.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-        </span>
-        <i className="ti ti-lock" style={{ fontSize: 11, color: 'var(--sv-text-4)' }} />
+        {/* Folder tag — only if note is in a folder */}
+        {folderName && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
+            <i className="ti ti-folder-filled" style={{ fontSize: 11, color: 'var(--sv-text-4)' }} />
+            <span style={{ fontSize: 12, color: 'var(--sv-text-4)' }}>{folderName}</span>
+          </div>
+        )}
       </div>
 
-      {/* Document body */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: "hidden", padding: '16px 20px' }}>
 
-        {/* ── Original note content ─────────────────────────────────────────── */}
         {isShared ? (
-          /* Amber border = the original note body */
+          /* Original note block — amber border, editable by owner */
           <div
             onMouseEnter={() => setHoveredOriginal(true)}
             onMouseLeave={() => setHoveredOriginal(false)}
@@ -321,9 +280,7 @@ export default function NoteEditor({
             <div style={{ flex: 1, minWidth: 0 }}>
               {editingOriginal ? (
                 <AutoTextarea
-                  autoFocus
-                  value={editContent}
-                  onChange={onContentChange}
+                  autoFocus value={editContent} onChange={onContentChange}
                   onBlur={() => { onSave(); setEditingOriginal(false); }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(); setEditingOriginal(false); }
@@ -334,25 +291,26 @@ export default function NoteEditor({
               ) : (
                 <p
                   onClick={() => isOwner && setEditingOriginal(true)}
-                  style={{
-                    fontSize: 15, lineHeight: 1.8, margin: 0,
-                    color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap',
-                    cursor: isOwner ? 'text' : 'default',
-                  }}
+                  style={{ fontSize: 15, lineHeight: 1.8, margin: 0, color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap', cursor: isOwner ? 'text' : 'default' }}
                 >
                   {editContent || <span style={{ color: 'var(--sv-text-4)', fontStyle: 'italic' }}>No content</span>}
                 </p>
               )}
             </div>
-
-            {/* Attribution */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, paddingTop: 4 }}>
+            <div 
+              style={{ 
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                flexShrink: 0,
+                paddingTop: 4,
+                maxWidth: 160,
+                overflow: 'hidden',
+              }}
+            >
               <div style={{ width: 5, height: 5, borderRadius: '50%', background: ORIGINAL_COLOR }} />
-              <span style={{ fontSize: 11, fontWeight: 500, color: ORIGINAL_COLOR, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 500, color: ORIGINAL_COLOR, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {isOwner ? 'You' : 'Owner'}
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--sv-text-4)', whiteSpace: 'nowrap' }}>
-                · {relDate(note.updated_at)}
               </span>
               {editingOriginal && (
                 <>
@@ -360,16 +318,9 @@ export default function NoteEditor({
                   <button onClick={() => setEditingOriginal(false)} style={{ fontSize: 10, color: 'var(--sv-text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>esc</button>
                 </>
               )}
-              {/* Sliding edit icon */}
               {isOwner && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', overflow: 'hidden', flexShrink: 0,
-                  maxWidth: showOriginalEdit ? 28 : 0,
-                  opacity: showOriginalEdit ? 1 : 0,
-                  transition: 'max-width 0.18s ease, opacity 0.12s ease',
-                }}>
-                  <button onClick={() => setEditingOriginal(true)} title="Edit original"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex', overflow: 'hidden', flexShrink: 0, maxWidth: showOriginalEdit ? 28 : 0, opacity: showOriginalEdit ? 1 : 0, transition: 'max-width 0.18s ease, opacity 0.12s ease' }}>
+                  <button onClick={() => setEditingOriginal(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' }}>
                     <i className="ti ti-pencil" style={{ fontSize: 12, color: ORIGINAL_COLOR }} />
                   </button>
                 </div>
@@ -378,23 +329,17 @@ export default function NoteEditor({
           </div>
 
         ) : (
-          /* Private note — full editable textarea, no border treatment */
+          /* Private note — full editable textarea */
           <AutoTextarea
-            value={editContent}
-            onChange={onContentChange}
-            onBlur={onSave}
+            value={editContent} onChange={onContentChange} onBlur={onSave}
             placeholder="Start writing…"
-            style={{
-              fontSize: 15, lineHeight: 1.8,
-              color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)',
-              flex: 1, minHeight: 200,
-            }}
+            style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)', flex: 1, minHeight: 200 }}
           />
         )}
 
         {/* Contribution segments */}
         {isShared && blocks.length > 0 && (
-          <div>
+          <div style={{ marginTop: 4 }}>
             {blocks.map((block) => (
               <Segment
                 key={block.id}
@@ -406,35 +351,6 @@ export default function NoteEditor({
                 onDeleted={onDeleteBlock}
               />
             ))}
-          </div>
-        )}
-
-        {/* ── Contribution input — plain, no box ───────────────────────────── */}
-        {isShared && (
-          <div style={{
-            marginTop: 16,
-            paddingTop: 16,
-            borderTop: '1px solid var(--sv-border)',
-          }}>
-            <AutoTextarea
-              value={contribution}
-              onChange={setContribution}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleContribute(); }
-              }}
-              placeholder="Write here…   ↵ save   ⇧↵ new line"
-              style={{
-                fontSize: 15, lineHeight: 1.8,
-                color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)',
-                minHeight: 36, opacity: adding ? 0.5 : 1,
-              }}
-            />
-            {/* Minimal keyboard hint — no button */}
-            {contribution.trim() && (
-              <p style={{ fontSize: 10, color: 'var(--sv-text-4)', marginTop: 6, textAlign: 'right' }}>
-                ↵ save · ⇧↵ new line
-              </p>
-            )}
           </div>
         )}
       </div>
