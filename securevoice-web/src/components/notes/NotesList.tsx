@@ -48,7 +48,7 @@ export default function NotesList({
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto sv-scroll">
         {loading ? (
           <div className="flex items-center justify-center h-28">
             <i className="ti ti-loader-2 animate-spin" style={{ fontSize: 22, color: 'var(--sv-text-3)' }} />

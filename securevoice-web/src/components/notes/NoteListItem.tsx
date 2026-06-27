@@ -105,6 +105,7 @@ export default function NoteListItem({
 }: NoteListItemProps) {
   const [showFolderMenu, setShowFolderMenu] = useState(false);
 
+  const myFolder = note?.folder_id ? folders.find((folder) => folder.id === note.folder_id ) ?? null : null;
   return (
     <div
       onClick={onSelect}
@@ -192,15 +193,15 @@ export default function NoteListItem({
             }}
           >
             <i
-              className={`ti ${note.folder_id ? 'ti-folder-filled' : 'ti-folder'}`}
-              style={{ fontSize: 13, color: note.folder_id ? 'var(--sv-accent)' : 'var(--sv-text-3)' }}
+              className={`ti ${myFolder ? 'ti-folder-filled' : 'ti-folder'}`}
+              style={{ fontSize: 13, color: myFolder ? 'var(--sv-accent)' : 'var(--sv-text-3)' }}
             />
           </button>
 
           {showFolderMenu && (
             <FolderDropdown
               folders={folders}
-              currentFolderId={note.folder_id}
+              currentFolderId={myFolder?.id ?? null}
               onSelect={onMoveToFolder}
               onClose={() => setShowFolderMenu(false)}
             />

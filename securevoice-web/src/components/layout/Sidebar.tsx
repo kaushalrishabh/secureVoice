@@ -96,7 +96,7 @@ export default function Sidebar({
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-2.5 overflow-y-auto">
+      <nav className="flex-1 px-2.5 overflow-y-auto sv-scroll">
         {NAV_ITEMS.map(({ key, icon, label }) => {
           const active = activeNav === key && !activeFolderId;
           return (

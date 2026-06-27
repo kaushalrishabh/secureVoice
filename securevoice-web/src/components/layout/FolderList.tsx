@@ -12,13 +12,13 @@ export default function FolderList({ folders, activeFolderId, onFolderClick }: F
   if (folders.length === 0) return null;
 
   return (
-    <div className="mt-5">
-      <p
+    <div>
+      {/* <p
         className="px-2 mb-2 text-[10px] uppercase tracking-[0.8px] font-medium"
         style={{ color: 'var(--sv-text-4)' }}
       >
         Folders
-      </p>
+      </p> */}
 
       {folders.map((folder, i) => {
         const active = activeFolderId === folder.id;

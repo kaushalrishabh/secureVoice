@@ -442,7 +442,6 @@ export default function Notes() {
             </div>
 
          ) : selectedNote ? (
-          <>
             <NoteEditor
               note={selectedNote}
               blocks={blocks}
@@ -455,13 +454,14 @@ export default function Notes() {
               onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
               onSave={handleSaveNote}
               onDeleteBlock={handleOnBlockDelete}
+              footer={
+                <NoteFooter
+                  note={selectedNote}
+                  user={user}
+                  onAddBlock={handleOnBlockAdd}
+                />
+              }
             />
-            <NoteFooter
-              note={selectedNote}
-              user={user}
-              onAddBlock={handleOnBlockAdd}
-            />
-          </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-5">
               <div className="w-18 h-18 rounded-2xl flex items-center justify-center"

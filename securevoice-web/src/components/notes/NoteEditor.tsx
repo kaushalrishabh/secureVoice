@@ -16,6 +16,7 @@ interface NoteEditorProps {
   onContentChange: (v: string) => void;
   onSave: () => void;
   onDeleteBlock: (blockId: string) => void;
+  footer: React.ReactNode;   // NoteFooter rendered here — shares same width context
 }
 
 const OWNER_BLOCK_COLOR = '#22C55E';
@@ -166,13 +167,13 @@ function Segment({
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, paddingTop: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, maxWidth: 160, overflow: 'hidden', paddingTop: 4 }}>
         <div style={{ width: 5, height: 5, borderRadius: '50%', flexShrink: 0, background: color }} />
-        <span style={{ fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', color }}>
+        <span style={{ fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color }}>
           {isTemp ? 'Saving…' : (isMe ? 'You' : name)}
         </span>
         {!isTemp && (
-          <span style={{ fontSize: 11, color: 'var(--sv-text-4)', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 11, color: 'var(--sv-text-4)', whiteSpace: 'nowrap', flexShrink: 0 }}>
             · {relDate(block.created_at)}
           </span>
         )}
@@ -214,6 +215,7 @@ export default function NoteEditor({
   note, blocks, editTitle, editContent,
   folders, userId, isOwner,
   onTitleChange, onContentChange, onSave, onDeleteBlock,
+  footer,
 }: NoteEditorProps) {
   const folderName  = folders.find((f) => f.id === note.folder_id)?.name;
   const isShared    = note.type === 'shared';
@@ -224,15 +226,20 @@ export default function NoteEditor({
   const showOriginalEdit = isOwner && hoveredOriginal && !editingOriginal;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-      <div
-        style={{
-          flexShrink: 0,
-          padding: '16px 20px 12px',
-          borderBottom: '1px solid var(--sv-border)',
-          background: 'var(--sv-bg)',
-        }}
-      >
+    <div style={{
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      minHeight: 0,
+      minWidth: 0,
+    }}>
+      <div style={{
+        flexShrink: 0,
+        padding: '16px 20px 12px',
+        borderBottom: '1px solid var(--sv-border)',
+        background: 'var(--sv-bg)',
+      }}>
         <input
           value={editTitle}
           onChange={(e) => onTitleChange(e.target.value)}
@@ -242,20 +249,13 @@ export default function NoteEditor({
             display: 'block',
             width: '100%',
             background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            boxShadow: 'none',
-            padding: 0,
-            fontSize: 26,
-            fontWeight: 600,
-            letterSpacing: '-0.4px',
-            color: 'var(--sv-text)',
-            caretColor: 'var(--sv-accent)',
+            border: 'none', outline: 'none', boxShadow: 'none',
+            padding: 0, margin: 0,
+            fontSize: 26, fontWeight: 600, letterSpacing: '-0.4px',
+            color: 'var(--sv-text)', caretColor: 'var(--sv-accent)',
             lineHeight: 1.3,
           }}
         />
-
-        {/* Folder tag — only if note is in a folder */}
         {folderName && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
             <i className="ti ti-folder-filled" style={{ fontSize: 11, color: 'var(--sv-text-4)' }} />
@@ -263,11 +263,8 @@ export default function NoteEditor({
           </div>
         )}
       </div>
-
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: "hidden", padding: '16px 20px' }}>
-
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 20px' }}>
         {isShared ? (
-          /* Original note block — amber border, editable by owner */
           <div
             onMouseEnter={() => setHoveredOriginal(true)}
             onMouseLeave={() => setHoveredOriginal(false)}
@@ -297,18 +294,8 @@ export default function NoteEditor({
                 </p>
               )}
             </div>
-            <div 
-              style={{ 
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                flexShrink: 0,
-                paddingTop: 4,
-                maxWidth: 160,
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ width: 5, height: 5, borderRadius: '50%', background: ORIGINAL_COLOR }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, maxWidth: 160, overflow: 'hidden', paddingTop: 4 }}>
+              <div style={{ width: 5, height: 5, borderRadius: '50%', background: ORIGINAL_COLOR, flexShrink: 0 }} />
               <span style={{ fontSize: 11, fontWeight: 500, color: ORIGINAL_COLOR, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {isOwner ? 'You' : 'Owner'}
               </span>
@@ -327,9 +314,7 @@ export default function NoteEditor({
               )}
             </div>
           </div>
-
         ) : (
-          /* Private note — full editable textarea */
           <AutoTextarea
             value={editContent} onChange={onContentChange} onBlur={onSave}
             placeholder="Start writing…"
@@ -337,7 +322,6 @@ export default function NoteEditor({
           />
         )}
 
-        {/* Contribution segments */}
         {isShared && blocks.length > 0 && (
           <div style={{ marginTop: 4 }}>
             {blocks.map((block) => (
@@ -354,6 +338,7 @@ export default function NoteEditor({
           </div>
         )}
       </div>
+      {footer}
     </div>
   );
 }
