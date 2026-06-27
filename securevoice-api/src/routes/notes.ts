@@ -27,31 +27,34 @@ router.get('/', asyncHandler(async (
     const params: unknown[] = [req.user!.id]
     let folderClause = '';
     if(folder_id) {
-        folderClause = 'AND n.folder_id = ?';
+        folderClause = 'AND nk.folder_id = ?';
         params.push(folder_id)
     }
 
     const [rows] = await pool.query(`
-            SELECT 
+        SELECT 
             n.id,
             n.content_cipher,
             n.content_iv,
-            n.pinned,
-            n.folder_id,
+            nk.pinned,
+            nk.folder_id,
             n.updated_at,
             nk.role,
             nk.enc_note_dek,
-            -- 'shared' if more than one user has a key, otherwise 'private'
-            CASE 
-                WHEN (SELECT COUNT(*) FROM note_keys WHERE note_id = n.id) > 1 
+        CASE 
+            WHEN (SELECT COUNT(*) FROM note_keys WHERE note_id = n.id) > 1 
                 THEN 'shared' 
                 ELSE 'private' 
             END AS type
-            FROM notes n
-            JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
-            ORDER BY n.pinned DESC, n.updated_at DESC
-        `, params,
-    )
+        FROM 
+            notes n
+        JOIN 
+            note_keys nk ON nk.note_id = n.id AND nk.user_id = ? ${folderClause}
+        ORDER BY 
+            nk.pinned DESC,
+            n.updated_at DESC
+        `, params
+    );
     return res.json({ notes: rows })
 }));
 
@@ -122,23 +125,32 @@ router.post('/', asyncHandler( async(
 
         const noteId = uuidv4();
         await conn.query(`
-                INSERT INTO notes (id, owner_id, folder_id, type, content_iv, content_cipher, pinned)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            `, [noteId, req.user!.id, folder_id, type, content_iv, content_cipher, pinned ? 1 : 0]
+                INSERT INTO notes (id, owner_id, type, content_iv, content_cipher)
+                VALUES (?, ?, ?, ?, ?)
+            `, [noteId, req.user!.id, type, content_iv, content_cipher]
         );
 
         await conn.query(`
                 INSERT INTO note_keys (note_id, user_id, enc_note_dek, enc_method, role)
-                VALUES (?, ?, ?, ?, 'owner')
-            `,[noteId, req.user!.id, note_key.enc_note_dek, note_key.enc_method]
-        )
+                VALUES (?, ?, ?, ?, 'owner',)
+            `, [noteId, req.user!.id, note_key.enc_note_dek, note_key.enc_method]
+        );
 
         await conn.commit();
         const [rows] = await pool.query(`
-                SELECT n.*, nk.enc_note_dek, nk.enc_method, nk.role
-                FROM notes n
-                INNER JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
-                WHERE n.id = ?
+                SELECT 
+                    n.*,
+                    nk.enc_note_dek,
+                    nk.enc_method,
+                    nk.role,
+                    nk.folder_id,
+                    nk.pinned
+                FROM 
+                    notes n
+                INNER JOIN 
+                    note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
+                WHERE 
+                    n.id = ?
             `,[req.user!.id, noteId]
         )
         
@@ -163,11 +175,20 @@ router.get('/:id', asyncHandler( async(
     res: Response
 ) => {
     const [noteRows] = await pool.query(`
-            SELECT n.*, nk.enc_note_dek, nk.enc_method, nk.role
-            FROM notes n
-            INNER JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
-            WHERE n.id = ?
-            LIMIT 1
+        SELECT 
+            n.*,
+            nk.enc_note_dek,
+            nk.enc_method,
+            nk.role,
+            nk.folder_id,
+            nk.pinned
+        FROM 
+            notes n
+        INNER JOIN 
+            note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
+        WHERE 
+            n.id = ?
+        LIMIT 1
         `,[req.user!.id, req.params.id]
     );
 
@@ -214,45 +235,51 @@ router.put('/:id', asyncHandler(async (
         pinned?: boolean
     };
 
-    const updates: string [] = [];
-    const values: unknown [] = [];
+    const noteUpdates: string[] = [];
+    const noteValues: unknown[] = [];
+    const keyUpdates: string[] = [];
+    const keyValues: unknown[] = [];
     
     // body params check
     if(content_iv !== undefined) { 
-        updates.push('content_iv = ?');
-        values.push(content_iv);
+        noteUpdates.push('content_iv = ?');
+        noteValues.push(content_iv);
     }
     if(content_cipher !== undefined) { 
-        updates.push('content_cipher = ?');
-        values.push(content_cipher);
+        noteUpdates.push('content_cipher = ?');
+        noteValues.push(content_cipher);
     }
     if(folder_id !== undefined) { 
-        updates.push('folder_id = ?');
-        values.push(folder_id);
+        keyUpdates.push('folder_id = ?');
+        keyValues.push(folder_id);
     }
     if(pinned !== undefined) { 
-        updates.push('pinned = ?');
-        values.push(pinned ? 1 : 0);
+        keyUpdates.push('pinned = ?');
+        keyValues.push(pinned ? 1 : 0);
     }
     
-    if(updates.length === 0) {
-        return res.status(400).json({ error: "No Updatable Fields Provided" })
+    if (noteUpdates.length === 0 && keyUpdates.length === 0) {
+        return res.status(400).json({ error: 'No updatable fields provided' });
     }
 
-    // updated_at is handled by MySQL on CURRENT_TIMESTAMP
-    values.push(req.params.id)
-    await pool.query(`
-            UPDATE notes SET ${updates.join(', ')} WHERE id = ?
-        `, values
-    )
+    if (noteUpdates.length > 0) {
+        noteValues.push(req.params.id);
+        await pool.query(`UPDATE notes SET ${noteUpdates.join(', ')} WHERE id = ?`, noteValues);
+    }
+    if (keyUpdates.length > 0) {
+        keyValues.push(req.params.id, req.user!.id);
+        await pool.query(
+            `UPDATE note_keys SET ${keyUpdates.join(', ')} WHERE note_id = ? AND user_id = ?`,
+            keyValues,
+        );
+    }
 
     const [updated] = await pool.query(`
-            SELECT n.*, nk.enc_note_dek, nk.enc_method, nk.role
-            FROM notes n
-            INNER JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
-            WHERE n.id = ?    
-        `,[req.user!.id, req.params.id]
-    )
+        SELECT n.*, nk.enc_note_dek, nk.enc_method, nk.role, nk.folder_id, nk.pinned
+        FROM notes n
+        INNER JOIN note_keys nk ON nk.note_id = n.id AND nk.user_id = ?
+        WHERE n.id = ?
+    `, [req.user!.id, req.params.id]);
 
     return res.json({ note: (updated as any[])[0] });
 }))
