@@ -1,39 +1,28 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type { User } from "../types";
 
 interface AuthStore {
-    user: User | null,
-    setUser: (user: User) => void,
-    clearUser: () => void,
-
-    // if both the JWT token and user object are present.
-    // isAuthenticated: boolean
+    user: User | null;
+    setUser: (user: User) => void;
+    clearUser: () => void;
 }
 
 export const useAuthStore = create<AuthStore>()(
     persist(
         (set) => ({
             user: null,
-            // isAuthenticated: false,
-            // to set user auth
-            setUser: (user: User) => set({ user, 
-                // isAuthenticated: true 
-            }),
-            // to remove user auth
-            clearUser: () => set({ user: null,
-                //  isAuthenticated: false 
-            }),
+            setUser: (user: User) => set({ user }),
+            clearUser: () => set({ user: null }),
         }),
         {
-            name: 'sv_user', // key in localStorage
-            // Only persist user -- never crypto keys
+            name: 'sv_user',
+            storage: createJSONStorage(() => sessionStorage), // ← this is the fix
             partialize: (state) => ({ user: state.user }),
-            // Re-derive isAuthenticated from persisted user on rehydration
             onRehydrateStorage: () => (state) => {
-                if(state) {
-                    const hasToken = !!localStorage.getItem('sv_token');
-                    // state.isAuthenticated = !!state.user && hasToken
+                if (state?.user) {
+                    const hasToken = !!localStorage.getItem(`sv_token_${state.user.id}`);
+                    if (!hasToken) state.user = null;
                 }
             },
         },

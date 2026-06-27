@@ -24,6 +24,7 @@ import {
     persistSessionDEK,
     setSession,
     clearSession,
+    clearPersistedSession,
 } from '../lib/session';
 import { apiFetch } from "../lib/api";
 
@@ -134,9 +135,9 @@ export async function register(
     });
 
   // ── Step 6: persist token, store session keys ─────────────────────────────
-    localStorage.setItem('sv_token', token);
+    localStorage.setItem(`sv_token_${user.id}`, token);
     setSession({ userDEK, RSAPrivateKey: privateKey });
-    await persistSessionDEK(userDEK);  // survives page refresh
+    await persistSessionDEK(userDEK, user.id);
 
     return user;
 }
@@ -173,17 +174,19 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   const RSAPrivateKey = await importEncryptedPrivateKey(user.private_key_enc, userDEK);
 
   // ── Step 5: persist token, store session keys ─────────────────────────────
-  localStorage.setItem('sv_token', token);
+  localStorage.setItem(`sv_token_${user.id}`, token);
   setSession({ userDEK, RSAPrivateKey });
-  await persistSessionDEK(userDEK);  // survives page refresh
+  await persistSessionDEK(userDEK, user.id);
 
   return user;
 }
 
 // ── Sign out ──────────────────────────────────────────────────────────────────
 
-export function signOut(): void {
-  localStorage.removeItem('sv_token');
-  clearSession();
-  sessionStorage.removeItem('sv_dek');
+export function signOut(userId?: string): void {
+    if (userId) {
+        localStorage.removeItem(`sv_token_${userId}`);
+        clearPersistedSession(userId);
+    }
+    clearSession();
 }

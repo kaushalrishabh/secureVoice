@@ -101,7 +101,7 @@ export default function Notes() {
 
       if (!userDEK) {
         const recovered = user?.private_key_enc
-          ? await tryRestoreSession(user.private_key_enc)
+          ? await tryRestoreSession(user.private_key_enc, user.id)
           : false;
 
         if (!recovered) {
@@ -275,7 +275,7 @@ export default function Notes() {
   }
 
   function handleSignOut() {
-    signOut();
+    signOut(user?.id);
     clearUser();
     navigate('/login');
   }
