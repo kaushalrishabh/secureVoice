@@ -33,7 +33,7 @@ export default function Navbar({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '10px 24px',
+        padding: '10px 14px',
         flexShrink: 0,
         borderBottom: '1px solid var(--sv-border-3)',
       }}
@@ -52,8 +52,11 @@ export default function Navbar({
               }}
             >
               <i className="ti ti-user-plus" style={{ fontSize: 15 }} />
-              Share
+              <span className="hidden sm:inline" style={{ marginLeft: 6 }}>
+                Share
+              </span>
             </button>
+
             {note.role === 'owner' && (
               <button
                 onClick={onDelete}
@@ -80,7 +83,7 @@ export default function Navbar({
           border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--sv-mono)',
         }}>
           <i className="ti ti-shield-lock" style={{ fontSize: 12 }} />
-          Encrypted
+          <span className="hidden sm:inline">Encrypted</span>
         </span>
 
         {note && (

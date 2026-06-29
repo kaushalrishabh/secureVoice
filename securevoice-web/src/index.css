@@ -64,3 +64,16 @@ input:focus {
 .sv-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.16);
 }
+
+@media (max-width: 767px) {
+  button {
+    min-height: 36px;
+  }
+  input, textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

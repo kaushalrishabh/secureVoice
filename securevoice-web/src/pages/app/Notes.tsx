@@ -73,7 +73,8 @@ export default function Notes() {
   const [search,         setSearch]         = useState('');
   const [activeNav,      setActiveNav]      = useState<NavKey>('all');
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-
+  const [mobilePanel, setMobilePanel] = useState<'sidebar' | 'list' | 'editor'>('list');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   async function handleInviteAccepted(noteId: string) {
     // Refresh the notes list so the newly shared note appears
     try {
@@ -132,28 +133,27 @@ export default function Notes() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-    async function openNote(id: string) {
+  async function openNote(id: string) {
     if (id === selectedId) return;
-    if (hasChanges && selectedId) {
-      await handleSaveNote().catch(() => {});
-    }
+    if (hasChanges && selectedId) await handleSaveNote().catch(() => {});
     setSelectedId(id);
     setIsCreating(false);
     setNoteLoading(true);
     setBlocks([]);
     setHasChanges(false);
+    setMobilePanel('editor');
 
     try {
       const note = await fetchNote(id);
       setSelectedNote(note);
-      setEditTitle(note.title || '');       // ← ADD: set directly, not only via useEffect
-      setEditContent(note.content || '');   // ← ADD: same
-      if (note.type === 'shared') {
-        setBlocks(await fetchDecryptedBlocks(id));
-      }
-    } catch (err: any) {
+      setEditTitle(note.title || '');
+      setEditContent(note.content || '');
+      if (note.type === 'shared') setBlocks(await fetchDecryptedBlocks(id));
+    }
+    catch (err: any) {
       toast.error(err.message ?? 'Failed to open note');
-    } finally {
+    }
+    finally {
       setNoteLoading(false);
     }
   }
@@ -185,9 +185,11 @@ export default function Notes() {
       setNewContent('');
       toast.success('Note created');
       openNote(note.id);
-    } catch (err: any) {
+    } 
+    catch (err: any) {
       toast.error(err.message ?? 'Failed to create note');
-    } finally {
+    }
+    finally {
       setCreating(false);
     }
   }
@@ -341,78 +343,192 @@ export default function Notes() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--sv-bg)' }}>
-
-      {/* Banner spans full width, sits above the three-panel layout */}
       <PendingInvitesBanner onAccepted={handleInviteAccepted} />
-
-      {/* Three-panel row — Sidebar / NotesList / Editor all live inside this flex row */}
-      <div className="flex flex-1 overflow-hidden">
-
-        {/* Sidebar */}
-        <Sidebar
-          user={user}
-          notes={notes}
-          folders={folders}
-          activeNav={activeNav}
-          activeFolderId={activeFolderId}
-          onNavChange={(nav) => { setActiveNav(nav); setActiveFolderId(null); }}
-          onFolderChange={setActiveFolderId}
-          onNewNote={() => { setIsCreating(true); setSelectedId(null); setSelectedNote(null); setNewTitle(''); setNewContent(''); }}
-          onSignOut={handleSignOut}
-          onCreateFolder={handleCreateFolder}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 lg:hidden"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setSidebarOpen(false)}
         />
+      )}
 
-        {/* Notes list */}
-        <NotesList
-          notes={sortedNotes}
-          folders={folders}
-          loading={loading}
-          selectedId={selectedId}
-          search={search}
-          onSearch={setSearch}
-          onSelect={openNote}
-          onPin={handlePinNote}
-          onMoveToFolder={handleMoveToFolder}
-          onShare={(note) => {
-            setSelectedId(note.id);
-            setShowShare(true);
-            setShareSuccess(false);
-            setShareEmail('');
-          }}
-          onDelete={(note) => {
-            setDeleteTarget(note);
-            setShowDelete(true);
-          }}
-        />
+      <div className="flex flex-1 overflow-hidden relative">
+        <div className={`flex-shrink-0 z-30 hidden lg:flex lg:flex-col h-full`} style={{ width: 160 }}>
+          <Sidebar
+            user={user}
+            notes={notes}
+            folders={folders}
+            activeNav={activeNav}
+            activeFolderId={activeFolderId}
+            onNavChange={(nav) => { 
+              setActiveNav(nav);
+              setActiveFolderId(null);
+              setSidebarOpen(false); 
+            }}
+            onFolderChange={(id) => {
+              setActiveFolderId(id);
+              setSidebarOpen(false); 
+            }}
+            onNewNote={() => {
+              setIsCreating(true);
+              setSelectedId(null);
+              setSelectedNote(null);
+              setNewTitle('');
+              setNewContent('');
+              setMobilePanel('list');
+            }}
+            onSignOut={handleSignOut}
+            onCreateFolder={handleCreateFolder}
+          />
+        </div>
 
-        {/* Editor panel */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Tablet drawer */}
+        <div
+          className={`
+            fixed top-0 left-0 h-full z-30 flex flex-col flex-shrink-0
+            lg:hidden
+            transition-transform duration-300
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          `} 
+          style={{ width: 200 }}
+        >
+          <Sidebar
+            user={user}
+            notes={notes}
+            folders={folders}
+            activeNav={activeNav}
+            activeFolderId={activeFolderId}
+            onNavChange={(nav) => { 
+              setActiveNav(nav);
+              setActiveFolderId(null);
+              setSidebarOpen(false);
+            }}
+            onFolderChange={(id) => {
+              setActiveFolderId(id);
+              setSidebarOpen(false);
+            }}
+            onNewNote={() => {
+              setIsCreating(true);
+              setSelectedId(null);
+              setSelectedNote(null);
+              setNewTitle('');
+              setNewContent('');
+              setSidebarOpen(false);
+              setMobilePanel('list');
+            }}
+            onSignOut={handleSignOut}
+            onCreateFolder={handleCreateFolder}
+          />
+        </div>
+        {/* Desktop/tablet: always visible. Mobile: visible only when mobilePanel==='list' */}
+        <div
+          className={`
+            flex-shrink-0 flex flex-col
+            w-full md:w-[268px]
+            ${mobilePanel === 'list' ? 'flex' : 'hidden'}
+            md:flex
+          `}
+          style={{ borderRight: '1px solid var(--sv-border-3)' }}
+        >
+          {/* Tablet hamburger row */}
+          <div className="flex items-center gap-2 px-3 pt-3 pb-1 lg:hidden">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+            >
+              <i className="ti ti-menu-2" style={{ fontSize: 20, color: 'var(--sv-text-2)' }} />
+            </button>
+            <button
+              onClick={() => {
+                setIsCreating(true);
+                setSelectedId(null);
+                setSelectedNote(null);
+                setNewTitle('');
+                setNewContent('');
+                setMobilePanel('editor'); 
+              }}
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+            >
+              <i className="ti ti-edit" style={{ fontSize: 20, color: 'var(--sv-accent)' }} />
+            </button>
+          </div>
+          <NotesList
+            notes={sortedNotes} folders={folders}
+            loading={loading} selectedId={selectedId}
+            search={search} onSearch={setSearch}
+            onSelect={(id) => {
+              openNote(id)
+            }}
+            onPin={handlePinNote}
+            onMoveToFolder={handleMoveToFolder}
+            onShare={(note) => {
+              setSelectedId(note.id);
+              setShowShare(true);
+              setShareSuccess(false);
+              setShareEmail('');
+            }}
+            onDelete={(note) => {
+              setDeleteTarget(note);
+              setShowDelete(true);
+            }}
+          />
+        </div>
+
+        {/* ── Editor panel ── */}
+        <main className={`
+          flex-1 flex flex-col min-w-0 overflow-hidden
+          ${mobilePanel === 'editor' ? 'flex' : 'hidden'}
+          md:flex
+        `}>
+          {/* Mobile back button inside Navbar area */}
+          <div className="flex items-center md:hidden px-3 pt-2 flex-shrink-0">
+            <button
+              onClick={() => setMobilePanel('list')}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px 8px 4px 0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <i className="ti ti-chevron-left" style={{ fontSize: 18, color: 'var(--sv-text-2)' }} />
+              <span style={{ fontSize: 13, color: 'var(--sv-text-2)' }}>Notes</span>
+            </button>
+          </div>
 
           <Navbar
-            note={selectedNote}
-            isCreating={isCreating}
-            hasChanges={hasChanges}
-            saving={saving}
-            updatedAt={selectedNote?.updated_at}   // ← ADD this prop
-            onShare={() => { setShowShare(true); setShareSuccess(false); setShareEmail(''); }}
-            onDelete={() => { if (selectedNote) { setDeleteTarget(selectedNote); setShowDelete(true); } }}
+            note={selectedNote} isCreating={isCreating}
+            hasChanges={hasChanges} saving={saving}
+            updatedAt={selectedNote?.updated_at}
+            onShare={() => {
+              setShowShare(true);
+              setShareSuccess(false);
+              setShareEmail('');
+            }}
+            onDelete={() => { 
+              if (selectedNote) { 
+                setDeleteTarget(selectedNote);
+                setShowDelete(true);
+              } 
+            }}
             onSave={handleSaveNote}
           />
 
-          {/* Body */}
+          {/* Body — unchanged from current */}
           {noteLoading ? (
             <div className="flex-1 flex items-center justify-center">
-              <i className="ti ti-loader-2 animate-spin" style={{ fontSize: 26, color: 'var(--sv-text-3)' }} aria-hidden="true" />
+              <i className="ti ti-loader-2 animate-spin" style={{ fontSize: 26, color: 'var(--sv-text-3)' }} />
             </div>
-
           ) : isCreating ? (
-            <div className="flex-1 flex flex-col px-8 py-7 overflow-y-auto">
+            <div className="flex-1 flex flex-col px-6 py-7 overflow-y-auto sv-scroll">
               <input
-                autoFocus
-                value={newTitle}
+                autoFocus value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="Note title"
-                className="w-full bg-transparent text-[24px] font-medium mb-4 leading-tight"
+                className="w-full bg-transparent text-[22px] font-medium mb-4 leading-tight"
                 style={{ color: 'var(--sv-text)', caretColor: 'var(--sv-accent)', border: 'none', outline: 'none' }}
               />
               <textarea
@@ -423,155 +539,84 @@ export default function Notes() {
                 style={{ color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)', border: 'none', outline: 'none' }}
               />
               <div className="flex gap-3 mt-6 flex-shrink-0">
-                <button
-                  onClick={handleCreateNote}
-                  disabled={creating || !newTitle.trim()}
+                <button onClick={handleCreateNote} disabled={creating || !newTitle.trim()}
                   className="px-5 py-2.5 rounded-[10px] text-[14px] font-medium transition-opacity disabled:opacity-50"
-                  style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
-                >
+                  style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}>
                   {creating ? 'Encrypting…' : 'Save Note'}
                 </button>
-                <button
-                  onClick={() => setIsCreating(false)}
+                <button 
+                  onClick={() => { 
+                    setIsCreating(false);
+                    setMobilePanel('list');
+                  }}
                   className="px-5 py-2.5 rounded-[10px] text-[14px] hover:opacity-70 transition-opacity"
-                  style={{ color: 'var(--sv-text-3)', border: '0.5px solid var(--sv-border-2)' }}
-                >
+                  style={{ color: 'var(--sv-text-3)', border: '0.5px solid var(--sv-border-2)' }}>
                   Cancel
                 </button>
               </div>
             </div>
-
-         ) : selectedNote ? (
-            <NoteEditor
-              note={selectedNote}
-              blocks={blocks}
-              editTitle={editTitle}
-              editContent={editContent}
-              folders={folders}
-              userId={user?.id ?? ''}
-              isOwner={selectedNote.role === 'owner'}
-              onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
-              onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
-              onSave={handleSaveNote}
-              onDeleteBlock={handleOnBlockDelete}
-              footer={
-                <NoteFooter
-                  note={selectedNote}
-                  user={user}
-                  onAddBlock={handleOnBlockAdd}
-                />
-              }
-            />
+          ) : selectedNote ? (
+            <>
+              <NoteEditor
+                note={selectedNote} blocks={blocks}
+                editTitle={editTitle} editContent={editContent}
+                folders={folders} userId={user?.id ?? ''}
+                isOwner={selectedNote.role === 'owner'}
+                onTitleChange={(v) => {
+                  setEditTitle(v);
+                  setHasChanges(true)
+                }}
+                onContentChange={(v) => {
+                  setEditContent(v);
+                  setHasChanges(true);
+                }}
+                onSave={handleSaveNote}
+                onDeleteBlock={handleOnBlockDelete}
+                footer={
+                  <NoteFooter
+                    note={selectedNote} user={user}
+                    onAddBlock={handleAddBlock}
+                  />
+                }
+              />
+            </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center gap-5">
-              <div className="w-18 h-18 rounded-2xl flex items-center justify-center"
-                   style={{ background: 'var(--sv-surface)', width: 72, height: 72 }}>
-                <i className="ti ti-notes" style={{ fontSize: 32, color: 'var(--sv-text-4)' }} aria-hidden="true" />
-              </div>
-              <div className="text-center">
-                <p className="text-[16px] font-medium mb-1.5" style={{ color: 'var(--sv-text)' }}>
-                  {notes.length === 0 ? 'No notes yet' : 'Select a note'}
-                </p>
-                <p className="text-[14px]" style={{ color: 'var(--sv-text-3)' }}>
-                  {notes.length === 0 ? 'Create your first encrypted note' : 'Choose a note from the list'}
-                </p>
-              </div>
-              {notes.length === 0 && (
-                <button
-                  onClick={() => setIsCreating(true)}
-                  className="flex items-center gap-2 px-5 py-3 rounded-[10px] text-[14px] font-medium mt-1"
-                  style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
-                >
-                  <i className="ti ti-plus" style={{ fontSize: 16 }} aria-hidden="true" />
-                  Create your first note
-                </button>
-              )}
+            <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ color: 'var(--sv-text-4)' }}>
+              <i className="ti ti-notes" style={{ fontSize: 40, opacity: 0.3 }} />
+              <p style={{ fontSize: 14 }}>Select a note to start editing</p>
             </div>
           )}
         </main>
       </div>
 
-      {/* ── Share Modal ──────────────────────────────────────────────────── */}
-      <Modal
-        isOpen={showShare}
-        onClose={() => { setShowShare(false); setShareEmail(''); setShareSuccess(false); }}
-        title="Share Note"
-        description="Invite someone to collaborate on this note"
-      >
-        {shareSuccess ? (
-          <div className="text-center py-5">
-            <i className="ti ti-circle-check" style={{ fontSize: 36, color: 'var(--sv-green)', display: 'block', marginBottom: 10 }} aria-hidden="true" />
-            <p className="text-[15px]" style={{ color: 'var(--sv-text)' }}>Invite sent!</p>
-          </div>
-        ) : (
-          <>
-            <div className="mb-5">
-              <FloatingInput
-                label="Email address"
-                type="email"
-                value={shareEmail}
-                onChange={(e) => setShareEmail(e.target.value)}
-                autoComplete="email"
-              />
-            </div>
-            <p className="text-[12px] mb-5" style={{ color: 'var(--sv-text-4)' }}>
-              The note key is encrypted with their public key — only they can decrypt it.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={handleShare}
-                disabled={shareLoading || !shareEmail.trim()}
-                className="flex-1 py-2.5 rounded-[10px] text-[14px] font-medium
-                           flex items-center justify-center gap-2 transition-opacity disabled:opacity-50"
-                style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
-              >
-                {shareLoading ? (
-                  <>
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Encrypting…
-                  </>
-                ) : 'Send Invite'}
-              </button>
-              <button
-                onClick={() => { setShowShare(false); setShareEmail(''); }}
-                className="px-4 py-2.5 rounded-[10px] text-[14px] hover:opacity-70 transition-opacity"
-                style={{ color: 'var(--sv-text-3)', border: '0.5px solid var(--sv-border-2)' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
-      </Modal>
-
-      {/* ── Delete Confirmation Modal ────────────────────────────────────── */}
-      <Modal
-        isOpen={showDelete}
-        onClose={() => { setShowDelete(false); setDeleteTarget(null); }}
-        title="Delete Note"
-        description={`"${deleteTarget?.title || 'Untitled'}" will be permanently deleted.`}
-      >
-        <div className="flex gap-3">
-          <button
-            onClick={handleConfirmDelete}
-            disabled={deleting}
-            className="flex-1 py-2.5 rounded-[10px] text-[14px] font-medium transition-opacity disabled:opacity-50"
-            style={{ background: 'var(--sv-danger)', color: '#fff' }}
+      {/* ── Mobile bottom nav ── */}
+      <nav className="flex md:hidden flex-shrink-0" style={{
+        borderTop: '1px solid var(--sv-border-3)',
+        background: 'var(--sv-brand)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}>
+        {[
+          { key: 'sidebar' as const, icon: 'ti-layout-sidebar', label: 'Menu' },
+          { key: 'list'    as const, icon: 'ti-notes',          label: 'Notes' },
+          { key: 'editor'  as const, icon: 'ti-edit',           label: 'Editor' },
+        ].map(({ key, icon, label }) => (
+          <button key={key} onClick={() => {
+            if (key === 'sidebar') {
+              setSidebarOpen(true);
+            }
+            else setMobilePanel(key);
+          }}
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-2"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: mobilePanel === key ? 'var(--sv-accent)' : 'var(--sv-text-3)',
+            }}
           >
-            {deleting ? 'Deleting…' : 'Delete Note'}
+            <i className={`ti ${icon}`} style={{ fontSize: 20 }} />
+            <span style={{ fontSize: 10 }}>{label}</span>
           </button>
-          <button
-            onClick={() => { setShowDelete(false); setDeleteTarget(null); }}
-            className="px-4 py-2.5 rounded-[10px] text-[14px] hover:opacity-70 transition-opacity"
-            style={{ color: 'var(--sv-text-3)', border: '0.5px solid var(--sv-border-2)' }}
-          >
-            Cancel
-          </button>
-        </div>
-      </Modal>
+        ))}
+      </nav>
     </div>
   );
 }

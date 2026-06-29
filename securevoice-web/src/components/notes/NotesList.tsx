@@ -21,11 +21,7 @@ export default function NotesList({
   onSearch, onSelect, onPin, onMoveToFolder, onShare, onDelete,
 }: NotesListProps) {
   return (
-    <div
-      className="flex flex-col flex-shrink-0"
-      style={{ width: 268, borderRight: '1px solid var(--sv-border-3)' }}
-    >
-      {/* Search */}
+    <div className="flex flex-col w-full h-full">
       <div className="px-3 py-3" style={{ borderBottom: '1px solid var(--sv-border)' }}>
         <div
           className="flex items-center gap-2 px-3 py-2.5 rounded-[9px]"
