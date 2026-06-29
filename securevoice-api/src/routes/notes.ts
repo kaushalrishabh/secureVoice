@@ -132,7 +132,7 @@ router.post('/', asyncHandler( async(
 
         await conn.query(`
                 INSERT INTO note_keys (note_id, user_id, enc_note_dek, enc_method, role)
-                VALUES (?, ?, ?, ?, 'owner',)
+                VALUES (?, ?, ?, ?, 'owner')
             `, [noteId, req.user!.id, note_key.enc_note_dek, note_key.enc_method]
         );
 
