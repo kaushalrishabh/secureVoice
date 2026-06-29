@@ -10,8 +10,9 @@ import { useAuthStore } from '../store/authStore';
 */
 
 export default function ProtectedRoute() {
-   const user  = useAuthStore((s) => s.user);
-    const token = localStorage.getItem('sv_token');
+    const user  = useAuthStore((s) => s.user);
+    const userId = user?.id
+    const token = localStorage.getItem(`sv_token_${userId}`);
 
     if (!user || !token) {
         return <Navigate to="/login" replace />;

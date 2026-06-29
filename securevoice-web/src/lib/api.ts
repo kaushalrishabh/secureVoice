@@ -3,6 +3,8 @@
  * Attaches JWT from localStorage and throws on non-2xx responses.
 */
 
+import { useAuthStore } from "../store/authStore";
+
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
 export class APIError extends Error {
@@ -16,7 +18,10 @@ export async function apiFetch <T = unknown> (
     path: string,
     options: RequestInit = {},
 ): Promise <T> {
-    const token = localStorage.getItem("sv_token");
+    const userId = useAuthStore.getState().user?.id
+    const token = userId 
+        ? localStorage.getItem(`sv_token_${userId}`)
+        : null
 
     const response = await fetch(`${BASE_URL}${path}`, {
         ...options,

@@ -5,11 +5,6 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import './index.css';
 
-// Sync auth store with token on startup
-import { useAuthStore } from './store/authStore';
-const { user, clearUser } = useAuthStore.getState();
-if (user && !localStorage.getItem('sv_token')) clearUser();
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 1000 * 60 * 5, refetchOnWindowFocus: false },
