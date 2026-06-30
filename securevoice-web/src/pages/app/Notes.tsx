@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import toast from 'react-hot-toast';
@@ -14,6 +14,8 @@ import { shareNote } from '../../services/invites.service';
 import { apiFetch } from '../../lib/api';
 import type { Folder } from '../../types';
 import { getSession, tryRestoreSession } from '../../lib/session';
+import { connectSocket, disconnectSocket, getSocket } from '../../lib/socket';
+import { decrypt, decryptNote } from '../../lib/crypto';
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 import Sidebar    from '../../components/layout/Sidebar.tsx';
@@ -65,18 +67,15 @@ export default function Notes() {
   const [deleteTarget, setDeleteTarget] = useState<DecryptedNote | null>(null);
   const [deleting,    setDeleting]    = useState(false);
 
-  // ── Block input ───────────────────────────────────────────────────────────
-  const [blockText,   setBlockText]   = useState('');
-  const [addingBlock, setAddingBlock] = useState(false);
-
   // ── Sidebar filter ────────────────────────────────────────────────────────
   const [search,         setSearch]         = useState('');
   const [activeNav,      setActiveNav]      = useState<NavKey>('all');
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<'sidebar' | 'list' | 'editor'>('list');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const initialSocketRun = useRef(false);
+
   async function handleInviteAccepted(noteId: string) {
-    // Refresh the notes list so the newly shared note appears
     try {
       const notesList = await listNotes();
       setNotes(notesList);
@@ -97,6 +96,9 @@ export default function Notes() {
 
   // ── Load on mount ─────────────────────────────────────────────────────────
   useEffect(() => {
+    if (initialSocketRun.current) return;
+    initialSocketRun.current = true;
+
     async function init() {
       const { userDEK } = getSession();
 
@@ -113,8 +115,12 @@ export default function Notes() {
           return;
         }
       }
-      // Session valid — load data directly here
+
       try {
+        // Connect the socket BEFORE opening the first note
+        const token = localStorage.getItem(`sv_token_${user!.id}`);
+        if (token) connectSocket(token);
+
         const [notesList, { folders: fl }] = await Promise.all([
           listNotes(),
           apiFetch<{ folders: Folder[] }>('/api/folders'),
@@ -122,14 +128,118 @@ export default function Notes() {
         setNotes(notesList);
         setFolders(fl);
         if (notesList.length > 0) openNote(notesList[0].id);
-      } catch (err: any) {
+      }
+      catch (err: any) {
         toast.error(err.message ?? 'Failed to load notes');
-      } finally {
+      }
+      finally {
         setLoading(false);
       }
     }
     init();
   }, []);
+
+  // ── Join the room + reconnect re-sync
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !selectedId) return;
+
+    function joinCurrentNote() {
+      socket!.emit('note:join', selectedId);
+    }
+
+    async function handleConnect() {
+      joinCurrentNote();
+      try {
+        const refreshed = await fetchDecryptedBlocks(selectedId!);
+        setBlocks(refreshed);
+      } catch {
+      }
+    }
+
+    joinCurrentNote(); 
+    socket.on('connect', handleConnect);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.emit('note:leave', selectedId);
+    };
+  }, [selectedId]);
+
+  // ── Real-time event listeners ────────────────────────────────────────────
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    async function handleBlockNew({ noteId, block }: any) {
+      if (noteId !== selectedId) return;
+      if (block.author_id === user?.id) return; // our own optimistic block is already rendered
+      const noteDEK = getCachedNoteDEK(noteId);
+      if (!noteDEK) return;
+      try {
+        const text = await decrypt(block.content_iv, block.content_cipher, noteDEK);
+        setBlocks((p) => [...p, { ...block, text }]);
+      } catch {
+        setBlocks((p) => [...p, { ...block, text: '[Decryption failed]' }]);
+      }
+    }
+
+    function handleBlockDeleted({ noteId, blockId }: any) {
+      if (noteId !== selectedId) return;
+      setBlocks((p) => p.filter((b) => b.id !== blockId));
+    }
+
+    async function handleBlockUpdated({ noteId, blockId, content_iv, content_cipher }: any) {
+      if (noteId !== selectedId) return;
+      const noteDEK = getCachedNoteDEK(noteId);
+      if (!noteDEK) return;
+      try {
+        const text = await decrypt(content_iv, content_cipher, noteDEK);
+        setBlocks((p) => p.map((b) => b.id === blockId ? { ...b, text } : b));
+      } catch {
+        // leave existing text in place rather than corrupting the UI
+      }
+    }
+
+    async function handleNoteUpdated({ noteId, content_iv, content_cipher, updated_at }: any) {
+      const noteDEK = getCachedNoteDEK(noteId);
+      if (!noteDEK) return;
+      try {
+        const { title, content } = await decryptNote(content_iv, content_cipher, noteDEK);
+
+        // Always keep the list view's title/snippet/updated_at fresh.
+        setNotes((p) => p.map((n) => n.id === noteId ? { ...n, title, content, updated_at } : n));
+
+        if (noteId !== selectedId) return;
+
+        // If the user has unsaved local edits open, don't clobber them —
+        // just warn that the note changed elsewhere.
+        if (hasChanges) {
+          toast('This note was updated elsewhere. Saving now may overwrite those changes.', { icon: '⚠️' });
+          setSelectedNote((p) => p ? { ...p, updated_at } : null);
+          return;
+        }
+
+        setSelectedNote((p) => p ? { ...p, title, content, updated_at } : null);
+        setEditTitle(title);
+        setEditContent(content);
+      } catch {
+        // ignore malformed/undecryptable update — next manual fetch will recover
+      }
+    }
+
+    socket.on('block:new', handleBlockNew);
+    socket.on('block:deleted', handleBlockDeleted);
+    socket.on('block:updated', handleBlockUpdated);
+    socket.on('note:updated', handleNoteUpdated);
+
+    return () => {
+      socket.off('block:new', handleBlockNew);
+      socket.off('block:deleted', handleBlockDeleted);
+      socket.off('block:updated', handleBlockUpdated);
+      socket.off('note:updated', handleNoteUpdated);
+    };
+  }, [selectedId, user?.id, hasChanges]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -185,7 +295,7 @@ export default function Notes() {
       setNewContent('');
       toast.success('Note created');
       openNote(note.id);
-    } 
+    }
     catch (err: any) {
       toast.error(err.message ?? 'Failed to create note');
     }
@@ -229,20 +339,7 @@ export default function Notes() {
     }
   }
 
-  async function handleAddBlock() {
-    if (!blockText.trim() || !selectedId) return;
-    setAddingBlock(true);
-    try {
-      const block = await addBlock(selectedId, blockText.trim());
-      setBlocks((p) => [...p, block]);
-      setBlockText('');
-    } catch (err: any) {
-      toast.error(err.message ?? 'Failed to add block');
-    } finally {
-      setAddingBlock(false);
-    }
-  }
-
+  // Optimistic block add — the only add-block handler; wired to NoteFooter below.
   const handleOnBlockAdd = async (text: string) => {
     if (!selectedNote) return;
 
@@ -263,7 +360,6 @@ export default function Notes() {
       const real = await addBlock(selectedNote.id, text);
       const now  = new Date().toISOString();
       setBlocks((p) => p.map((b) => b.id === tempId ? real : b));
-      // ← ADD: update the note's timestamp
       setSelectedNote((p) => p ? { ...p, updated_at: now } : null);
       setNotes((p) => p.map((n) => n.id === selectedNote.id ? { ...n, updated_at: now } : n));
     } catch (err: any) {
@@ -277,6 +373,7 @@ export default function Notes() {
   }
 
   function handleSignOut() {
+    disconnectSocket();
     signOut(user?.id);
     clearUser();
     navigate('/login');
@@ -353,21 +450,21 @@ export default function Notes() {
       )}
 
       <div className="flex flex-1 overflow-hidden relative">
-        <div className={`flex-shrink-0 z-30 hidden lg:flex lg:flex-col h-full`} style={{ width: 160 }}>
+        <div className="flex-shrink-0 z-30 hidden lg:flex lg:flex-col h-full" style={{ width: 160 }}>
           <Sidebar
             user={user}
             notes={notes}
             folders={folders}
             activeNav={activeNav}
             activeFolderId={activeFolderId}
-            onNavChange={(nav) => { 
+            onNavChange={(nav) => {
               setActiveNav(nav);
               setActiveFolderId(null);
-              setSidebarOpen(false); 
+              setSidebarOpen(false);
             }}
             onFolderChange={(id) => {
               setActiveFolderId(id);
-              setSidebarOpen(false); 
+              setSidebarOpen(false);
             }}
             onNewNote={() => {
               setIsCreating(true);
@@ -389,7 +486,7 @@ export default function Notes() {
             lg:hidden
             transition-transform duration-300
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          `} 
+          `}
           style={{ width: 200 }}
         >
           <Sidebar
@@ -398,7 +495,7 @@ export default function Notes() {
             folders={folders}
             activeNav={activeNav}
             activeFolderId={activeFolderId}
-            onNavChange={(nav) => { 
+            onNavChange={(nav) => {
               setActiveNav(nav);
               setActiveFolderId(null);
               setSidebarOpen(false);
@@ -420,10 +517,11 @@ export default function Notes() {
             onCreateFolder={handleCreateFolder}
           />
         </div>
-        {/* Desktop/tablet: always visible. Mobile: visible only when mobilePanel==='list' */}
+
+        {/* Notes list */}
         <div
           className={`
-            flex-shrink-0 flex flex-col
+            flex-shrink-0 flex-col
             w-full md:w-[268px]
             ${mobilePanel === 'list' ? 'flex' : 'hidden'}
             md:flex
@@ -445,7 +543,7 @@ export default function Notes() {
                 setSelectedNote(null);
                 setNewTitle('');
                 setNewContent('');
-                setMobilePanel('editor'); 
+                setMobilePanel('editor');
               }}
               style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
             >
@@ -456,9 +554,7 @@ export default function Notes() {
             notes={sortedNotes} folders={folders}
             loading={loading} selectedId={selectedId}
             search={search} onSearch={setSearch}
-            onSelect={(id) => {
-              openNote(id)
-            }}
+            onSelect={(id) => { openNote(id); }}
             onPin={handlePinNote}
             onMoveToFolder={handleMoveToFolder}
             onShare={(note) => {
@@ -480,18 +576,13 @@ export default function Notes() {
           ${mobilePanel === 'editor' ? 'flex' : 'hidden'}
           md:flex
         `}>
-          {/* Mobile back button inside Navbar area */}
+          {/* Mobile back button */}
           <div className="flex items-center md:hidden px-3 pt-2 flex-shrink-0">
             <button
               onClick={() => setMobilePanel('list')}
               style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '4px 8px 4px 0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: '4px 8px 4px 0', display: 'flex', alignItems: 'center', gap: 4,
               }}
             >
               <i className="ti ti-chevron-left" style={{ fontSize: 18, color: 'var(--sv-text-2)' }} />
@@ -508,16 +599,16 @@ export default function Notes() {
               setShareSuccess(false);
               setShareEmail('');
             }}
-            onDelete={() => { 
-              if (selectedNote) { 
+            onDelete={() => {
+              if (selectedNote) {
                 setDeleteTarget(selectedNote);
                 setShowDelete(true);
-              } 
+              }
             }}
             onSave={handleSaveNote}
           />
 
-          {/* Body — unchanged from current */}
+          {/* Body */}
           {noteLoading ? (
             <div className="flex-1 flex items-center justify-center">
               <i className="ti ti-loader-2 animate-spin" style={{ fontSize: 26, color: 'var(--sv-text-3)' }} />
@@ -544,8 +635,8 @@ export default function Notes() {
                   style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}>
                   {creating ? 'Encrypting…' : 'Save Note'}
                 </button>
-                <button 
-                  onClick={() => { 
+                <button
+                  onClick={() => {
                     setIsCreating(false);
                     setMobilePanel('list');
                   }}
@@ -556,30 +647,22 @@ export default function Notes() {
               </div>
             </div>
           ) : selectedNote ? (
-            <>
-              <NoteEditor
-                note={selectedNote} blocks={blocks}
-                editTitle={editTitle} editContent={editContent}
-                folders={folders} userId={user?.id ?? ''}
-                isOwner={selectedNote.role === 'owner'}
-                onTitleChange={(v) => {
-                  setEditTitle(v);
-                  setHasChanges(true)
-                }}
-                onContentChange={(v) => {
-                  setEditContent(v);
-                  setHasChanges(true);
-                }}
-                onSave={handleSaveNote}
-                onDeleteBlock={handleOnBlockDelete}
-                footer={
-                  <NoteFooter
-                    note={selectedNote} user={user}
-                    onAddBlock={handleAddBlock}
-                  />
-                }
-              />
-            </>
+            <NoteEditor
+              note={selectedNote} blocks={blocks}
+              editTitle={editTitle} editContent={editContent}
+              folders={folders} userId={user?.id ?? ''}
+              isOwner={selectedNote.role === 'owner'}
+              onTitleChange={(v) => { setEditTitle(v); setHasChanges(true); }}
+              onContentChange={(v) => { setEditContent(v); setHasChanges(true); }}
+              onSave={handleSaveNote}
+              onDeleteBlock={handleOnBlockDelete}
+              footer={
+                <NoteFooter
+                  note={selectedNote} user={user}
+                  onAddBlock={handleOnBlockAdd}
+                />
+              }
+            />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ color: 'var(--sv-text-4)' }}>
               <i className="ti ti-notes" style={{ fontSize: 40, opacity: 0.3 }} />
@@ -601,9 +684,7 @@ export default function Notes() {
           { key: 'editor'  as const, icon: 'ti-edit',           label: 'Editor' },
         ].map(({ key, icon, label }) => (
           <button key={key} onClick={() => {
-            if (key === 'sidebar') {
-              setSidebarOpen(true);
-            }
+            if (key === 'sidebar') setSidebarOpen(true);
             else setMobilePanel(key);
           }}
             className="flex-1 flex flex-col items-center justify-center gap-1 py-2"
@@ -617,6 +698,64 @@ export default function Notes() {
           </button>
         ))}
       </nav>
+
+      {/* ── Share Modal ──────────────────────────────────────────────────── */}
+      <Modal
+        isOpen={showShare}
+        onClose={() => { setShowShare(false); setShareEmail(''); setShareSuccess(false); }}
+        title="Share Note"
+        description="Invite someone to collaborate on this note"
+      >
+        {shareSuccess ? (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <i className="ti ti-circle-check" style={{ fontSize: 36, color: 'var(--sv-green)' }} />
+            <p style={{ fontSize: 14, color: 'var(--sv-text)' }}>Invite sent successfully</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <FloatingInput
+              label="Email address"
+              type="email"
+              value={shareEmail}
+              onChange={(e) => setShareEmail(e.target.value)}
+            />
+            <button
+              onClick={handleShare}
+              disabled={shareLoading || !shareEmail.trim()}
+              className="px-5 py-2.5 rounded-[10px] text-[14px] font-medium transition-opacity disabled:opacity-50"
+              style={{ background: 'var(--sv-accent)', color: 'var(--sv-bg)' }}
+            >
+              {shareLoading ? 'Sending…' : 'Send Invite'}
+            </button>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Delete Confirm Modal ─────────────────────────────────────────── */}
+      <Modal
+        isOpen={showDelete}
+        onClose={() => { setShowDelete(false); setDeleteTarget(null); }}
+        title="Delete Note"
+        description={`Are you sure you want to delete "${deleteTarget?.title ?? 'this note'}"? This cannot be undone.`}
+      >
+        <div className="flex gap-3">
+          <button
+            onClick={handleConfirmDelete}
+            disabled={deleting}
+            className="px-5 py-2.5 rounded-[10px] text-[14px] font-medium transition-opacity disabled:opacity-50"
+            style={{ background: 'var(--sv-danger)', color: 'var(--sv-text)' }}
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+          <button
+            onClick={() => { setShowDelete(false); setDeleteTarget(null); }}
+            className="px-5 py-2.5 rounded-[10px] text-[14px] hover:opacity-70 transition-opacity"
+            style={{ color: 'var(--sv-text-3)', border: '0.5px solid var(--sv-border-2)' }}
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

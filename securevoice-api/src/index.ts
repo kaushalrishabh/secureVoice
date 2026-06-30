@@ -1,11 +1,16 @@
 import dotenv from 'dotenv';
 import app from './app';
 import { connectDB } from './db/connection';
+import { createServer } from 'http';
+import { initializeSocket } from './socket';
 
 dotenv.config();
 const PORT = process.env.PORT || 3000
 
-app.listen(PORT, async() => {
+const httpServer = createServer(app);
+initializeSocket(httpServer);
+
+httpServer.listen(PORT, async() => {
     try{
         await connectDB()
         console.log(`Server is Running on Port ${PORT}...`)

@@ -23,7 +23,6 @@ const router = Router();
 
 async function sendResetEmail(to: string, resetUrl: string): Promise<void> {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log(`\n[DEV] Password reset link for ${to}:\n${resetUrl}\n`);
     return;
   }
 
@@ -73,7 +72,6 @@ async function sendResetEmail(to: string, resetUrl: string): Promise<void> {
 router.post('/forgot-password', asyncHandler(async (req: Request, res: Response) => {
     const { email } = req.body as { email: string };
     if (!email) return res.status(400).json({ error: 'Email is required' });
-    console.log("fmsdl", email)
     const [rows] = await pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
     const user = (rows as any[])[0];
 

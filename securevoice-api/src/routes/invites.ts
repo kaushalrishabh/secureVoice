@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from "../db/connection";
 import { AuthRequest, requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../middleware/error";
+import { getIO } from "../socket";
 
 const router = Router();
 
@@ -40,7 +41,7 @@ router.post('/notes/:noteId/invite', asyncHandler( async(
             LIMIT 1    
         `, [noteId, req.user!.id]
     )
-    console.log("fngkdsj-->", owner)
+
     if((owner as any[]).length === 0) {
         return res.status(403).json({ error: "Only Note Owner can send Invites"});
     }
@@ -60,10 +61,10 @@ router.post('/notes/:noteId/invite', asyncHandler( async(
     }
 
     // Don't re-invite someone who already has an access
-    const inviteId = (inviteeRows as any[])[0].id
+    const inviteeUserId = (inviteeRows as any[])[0].id
     const [already] = await pool.query(`
             SELECT note_id FROM note_keys WHERE note_id = ? and user_id = ? LIMIT 1
-        `, [noteId, inviteId]
+        `, [noteId, inviteeUserId]
     );
     if((already as any[]).length > 0) {
         return res.status(409).json({ error: "User Already has Access to this Note" });
@@ -84,7 +85,11 @@ router.post('/notes/:noteId/invite', asyncHandler( async(
             INSERT INTO invites (id, note_id, inviter_id, invitee_email, token, enc_note_dek, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)
         `,[id, noteId, req.user!.id, invitee_email, token, enc_note_dek, expiresAt]
     );
-
+    getIO().to(`user: ${inviteeUserId}`).emit('invite:received', {
+        inviteId: id,
+        noteId,
+        inviterUsername: req.user!.username 
+    });
     // In Production: send an email with the invite link here
     return res.status(201).json({ 
         invite: {
@@ -188,8 +193,6 @@ router.post('/:token/accept', asyncHandler(async (
 
         await conn.query("UPDATE invites SET status = 'accepted' WHERE id = ? ", [invite.id]);
         await conn.commit();
-
-        return res.status(200).json({ message: "Invite Accepted", note_id: invite.note_id });
     }
     catch(err) {
         await conn.rollback();
@@ -198,6 +201,11 @@ router.post('/:token/accept', asyncHandler(async (
     finally {
         conn.release()
     }
+    getIO().to(`user:${invite.inviter_id}`).emit('invite:accepted', {
+        noteId: invite.note_id,
+        accepterUsername: req.user!.username,
+    });
+    return res.status(200).json({ message: "Invite Accepted", note_id: invite.note_id });
 }))
 
 /**

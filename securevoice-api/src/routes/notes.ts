@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { asyncHandler } from "../middleware/error";
 import { requireAuth, AuthRequest } from "../middleware/auth";
 import pool from "../db/connection";
+import { getIO } from "../socket";
 
 const router = Router();
 router.use(requireAuth);
@@ -274,6 +275,14 @@ router.put('/:id', asyncHandler(async (
         );
     }
 
+    if (noteUpdates.length > 0) {
+        getIO().to(`note:${req.params.id}`).emit('note:updated', {
+            noteId: req.params.id,
+            content_iv,
+            content_cipher,
+            updated_at: new Date().toISOString(),
+        });
+    }
     const [updated] = await pool.query(`
         SELECT n.*, nk.enc_note_dek, nk.enc_method, nk.role, nk.folder_id, nk.pinned
         FROM notes n
@@ -349,12 +358,17 @@ router.post('/:id/blocks', asyncHandler(async (req: AuthRequest, res: Response) 
         FROM note_blocks WHERE id = ?`,
         [id],
     );
+    const payload = { 
+        ...(rows as any[])[0], 
+        author_username: req.user!.username
+    }
+    getIO().to(`note:${req.params.id}`).emit('block:new', { 
+        noteId: req.params.id, 
+        block: payload
+    })
     
     return res.status(201).json({
-        blocks: {
-        ...(rows as any[])[0],
-        author_username: req.user!.username,
-        },
+        blocks: payload
     });
 }));
  
@@ -420,7 +434,14 @@ router.put('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res: Re
         `UPDATE note_blocks SET content_iv = ?, content_cipher = ? WHERE id = ?`,
         [content_iv, content_cipher, block.id],
     );
-    
+
+    getIO().to(`note:${req.params.id}`).emit('block:updated', {
+        noteId: req.params.id,
+        blockId: block.id,
+        content_iv,
+        content_cipher,
+    });
+
     return res.json({ message: 'Block updated' });
 }));
 
@@ -432,27 +453,32 @@ router.put('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res: Re
 
 router.delete('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res: Response) => {
   // Check note access + role
-  const [accessRows] = await pool.query(
-    `SELECT role FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
-    [req.params.id, req.user!.id],
-  );
-  const access = (accessRows as any[])[0];
-  if (!access) return res.status(403).json({ error: 'No access to this note' });
+    const [accessRows] = await pool.query(
+        `SELECT role FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+        [req.params.id, req.user!.id],
+    );
+    const access = (accessRows as any[])[0];
+    if (!access) return res.status(403).json({ error: 'No access to this note' });
 
-  const [rows] = await pool.query(
-    `SELECT id, author_id FROM note_blocks WHERE id = ? AND note_id = ? LIMIT 1`,
-    [req.params.blockId, req.params.id],
-  );
-  const block = (rows as any[])[0];
-  if (!block) return res.status(404).json({ error: 'Block not found' });
+    const [rows] = await pool.query(
+        `SELECT id, author_id FROM note_blocks WHERE id = ? AND note_id = ? LIMIT 1`,
+        [req.params.blockId, req.params.id],
+    );
+    const block = (rows as any[])[0];
+    if (!block) return res.status(404).json({ error: 'Block not found' });
 
-  // Owner can delete any block — editors only their own
-  if (access.role !== 'owner' && block.author_id !== req.user!.id) {
-    return res.status(403).json({ error: 'You can only delete your own contributions' });
-  }
+    // Owner can delete any block — editors only their own
+    if (access.role !== 'owner' && block.author_id !== req.user!.id) {
+        return res.status(403).json({ error: 'You can only delete your own contributions' });
+    }
 
-  await pool.query(`DELETE FROM note_blocks WHERE id = ?`, [block.id]);
-  return res.status(204).send();
+    await pool.query(`DELETE FROM note_blocks WHERE id = ?`, [block.id]);
+    getIO().to(`note:${req.params.id}`).emit('block:deleted', {
+        noteId: req.params.id,
+        blockId: block.id,
+    });
+    return res.status(204).send();
+
 }));
 
 export default router;
