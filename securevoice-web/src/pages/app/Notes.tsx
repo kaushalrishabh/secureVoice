@@ -73,6 +73,7 @@ export default function Notes() {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<'sidebar' | 'list' | 'editor'>('list');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [socketReady, setSocketReady] = useState(false);
   const initialSocketRun = useRef(false);
 
   async function handleInviteAccepted(noteId: string) {
@@ -137,6 +138,11 @@ export default function Notes() {
       }
     }
     init();
+    const token = localStorage.getItem(`sv_token_${user!.id}`);
+    if (token) {
+      connectSocket(token);
+      setSocketReady(true);
+    }
   }, []);
 
   // ── Join the room + reconnect re-sync
@@ -228,16 +234,28 @@ export default function Notes() {
       }
     }
 
+    function handleInviteAcceptedSocket({ noteId, accepterUsername }: any) {
+      toast.success(`${accepterUsername} accepted your invite`);
+      listNotes().then(setNotes).catch(() => {});
+    }
+
+    function handleInviteDeclined({ noteId, declinerUsername }: any) {
+      toast(`${declinerUsername} declined your invite`, { icon: '👋' });
+    }
     socket.on('block:new', handleBlockNew);
     socket.on('block:deleted', handleBlockDeleted);
     socket.on('block:updated', handleBlockUpdated);
     socket.on('note:updated', handleNoteUpdated);
+    socket.on('invite:accepted', handleInviteAcceptedSocket);
+    socket.on('invite:declined', handleInviteDeclined);
 
     return () => {
       socket.off('block:new', handleBlockNew);
       socket.off('block:deleted', handleBlockDeleted);
       socket.off('block:updated', handleBlockUpdated);
       socket.off('note:updated', handleNoteUpdated);
+      socket.off('invite:accepted', handleInviteAcceptedSocket);
+      socket.off('invite:declined', handleInviteDeclined);
     };
   }, [selectedId, user?.id, hasChanges]);
 
@@ -440,7 +458,10 @@ export default function Notes() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--sv-bg)' }}>
-      <PendingInvitesBanner onAccepted={handleInviteAccepted} />
+      <PendingInvitesBanner
+        onAccepted={handleInviteAccepted}
+        socketReady = {socketReady}
+      />
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 lg:hidden"

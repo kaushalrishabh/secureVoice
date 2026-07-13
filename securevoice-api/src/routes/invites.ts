@@ -85,10 +85,14 @@ router.post('/notes/:noteId/invite', asyncHandler( async(
             INSERT INTO invites (id, note_id, inviter_id, invitee_email, token, enc_note_dek, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)
         `,[id, noteId, req.user!.id, invitee_email, token, enc_note_dek, expiresAt]
     );
-    getIO().to(`user: ${inviteeUserId}`).emit('invite:received', {
+    getIO().to(`user:${inviteeUserId}`).emit('invite:received', {
         inviteId: id,
         noteId,
-        inviterUsername: req.user!.username 
+        inviterUsername: req.user!.username,
+        token,
+        enc_note_dek,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString()
     });
     // In Production: send an email with the invite link here
     return res.status(201).json({ 
@@ -215,11 +219,13 @@ router.post('/:token/accept', asyncHandler(async (
  * is left untouched (it's useless without the invitee's RSA key anyway) —
  * we simply mark the invite as declined so it stops showing up as pending.
  */
+// POST /:token/decline — add inviter_id and note_id to the select, then emit:
 router.post(
     '/:token/decline',
     asyncHandler(async (req: AuthRequest, res: Response) => {
         const [inviteRows] = await pool.query(
-            `SELECT id, invitee_email, status FROM invites WHERE token = ? LIMIT 1`,
+            `SELECT id, invitee_email, status, inviter_id, note_id 
+             FROM invites WHERE token = ? LIMIT 1`,
             [req.params.token],
         );
         const invite = (inviteRows as any[])[0];
@@ -234,6 +240,12 @@ router.post(
             return res.status(409).json({ error: `Invite is already ${invite.status}` });
         }
         await pool.query("UPDATE invites SET status = 'declined' WHERE id = ?", [invite.id]);
+
+        // Notify the inviter in real time that their invite was declined
+        getIO().to(`user:${invite.inviter_id}`).emit('invite:declined', {
+            noteId: invite.note_id,
+            declinerUsername: req.user!.username,
+        });
 
         return res.json({ message: 'Invite declined' });
     }),
