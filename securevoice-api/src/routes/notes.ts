@@ -4,6 +4,7 @@ import { asyncHandler } from "../middleware/error";
 import { requireAuth, AuthRequest } from "../middleware/auth";
 import pool from "../db/connection";
 import { getIO } from "../socket";
+import { logActivity } from '../lib/activity';
 
 const router = Router();
 router.use(requireAuth);
@@ -138,6 +139,14 @@ router.post('/', asyncHandler( async(
         );
 
         await conn.commit();
+        
+        logActivity({ 
+            noteId,
+            userId: req.user!.id,
+            username: req.user!.username,
+            event: 'note_created'
+        }).catch((err) => console.error('[logActivity failed]', err))
+
         const [rows] = await pool.query(`
                 SELECT 
                     n.*,
@@ -276,6 +285,13 @@ router.put('/:id', asyncHandler(async (
     }
 
     if (noteUpdates.length > 0) {
+        logActivity({ 
+            noteId: req.params.id as string,
+            userId: req.user!.id,
+            username: req.user!.username,
+            event: 'note_updated' 
+        }).catch((err) => console.error('[logActivity failed]', err))
+
         getIO().to(`note:${req.params.id}`).emit('note:updated', {
             noteId: req.params.id,
             content_iv,
@@ -362,6 +378,13 @@ router.post('/:id/blocks', asyncHandler(async (req: AuthRequest, res: Response) 
         ...(rows as any[])[0], 
         author_username: req.user!.username
     }
+    logActivity({ 
+        noteId: req.params.id as string,
+        userId: req.user!.id,
+        username: req.user!.username,
+        event: 'block_added', blockId: id 
+    }).catch((err) => console.error('[logActivity failed]', err))
+
     getIO().to(`note:${req.params.id}`).emit('block:new', { 
         noteId: req.params.id, 
         block: payload
@@ -435,6 +458,14 @@ router.put('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res: Re
         [content_iv, content_cipher, block.id],
     );
 
+    logActivity({ 
+        noteId: req.params.id as string,
+        userId: req.user!.id,
+        username: req.user!.username,
+        event: 'block_edited',
+        blockId: block.id
+    }).catch((err) => console.error('[logActivity failed]', err))
+
     getIO().to(`note:${req.params.id}`).emit('block:updated', {
         noteId: req.params.id,
         blockId: block.id,
@@ -473,12 +504,57 @@ router.delete('/:id/blocks/:blockId', asyncHandler(async (req: AuthRequest, res:
     }
 
     await pool.query(`DELETE FROM note_blocks WHERE id = ?`, [block.id]);
+    logActivity({ 
+        noteId: req.params.id as string,
+        userId: req.user!.id,
+        username: req.user!.username,
+        event: 'block_deleted',
+        blockId: block.id 
+    }).catch((err) => console.error('[logActivity failed]', err))
     getIO().to(`note:${req.params.id}`).emit('block:deleted', {
         noteId: req.params.id,
         blockId: block.id,
     });
     return res.status(204).send();
 
+}));
+
+/**
+ * GET /api/notes/:id/activity
+ * Returns the audit log for a note, newest first, paginated.
+ * Only accessible to users who have a note_key for this note.
+ * Query params: ?limit=50&before=<ISO timestamp>
+ */
+router.get('/:id/activity', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const [access] = await pool.query(
+    `SELECT 1 FROM note_keys WHERE note_id = ? AND user_id = ? LIMIT 1`,
+    [req.params.id, req.user!.id],
+  );
+  if ((access as any[]).length === 0) {
+    return res.status(403).json({ error: 'No access to this note' });
+  }
+
+  const limit  = Math.min(parseInt(req.query.limit as string ?? '50'), 100);
+  const before = req.query.before as string | undefined;
+
+  const params: unknown[] = [req.params.id];
+  let beforeClause = '';
+  if (before) {
+    beforeClause = 'AND na.created_at < ?';
+    params.push(before);
+  }
+  params.push(limit);
+
+  const [rows] = await pool.query(`
+    SELECT id, user_id, username, event, block_id, created_at
+    FROM note_activity na
+    WHERE note_id = ?
+    ${beforeClause}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `, params);
+
+  return res.json({ activity: rows });
 }));
 
 export default router;

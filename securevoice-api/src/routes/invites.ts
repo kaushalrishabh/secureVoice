@@ -5,6 +5,7 @@ import pool from "../db/connection";
 import { AuthRequest, requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../middleware/error";
 import { getIO } from "../socket";
+import { logActivity } from "../lib/activity";
 
 const router = Router();
 
@@ -197,6 +198,12 @@ router.post('/:token/accept', asyncHandler(async (
 
         await conn.query("UPDATE invites SET status = 'accepted' WHERE id = ? ", [invite.id]);
         await conn.commit();
+        logActivity({ 
+            noteId: invite.note_id,
+            userId: req.user!.id,
+            username: req.user!.username,
+            event: 'collaborator_joined' 
+        }).catch(() => {});
     }
     catch(err) {
         await conn.rollback();

@@ -26,6 +26,8 @@ import NoteFooter from '../../components/notes/NoteFooter';
 import Modal      from '../../components/ui/Modal.tsx';
 import FloatingInput from '../../components/ui/FloatingInput';
 import PendingInvitesBanner from '../../components/notes/PendingInvitesBanner.tsx';
+import ActivityPanel from '../../components/notes/ActivityPanel.tsx';
+import { fetchActivity, type ActivityEntry } from '../../services/activity.service.ts';
 
 type NavKey = 'all' | 'shared' | 'pinned';
 
@@ -76,6 +78,11 @@ export default function Notes() {
   const [socketReady, setSocketReady] = useState(false);
   const initialSocketRun = useRef(false);
 
+  // --- Activity Panel -----------------------------
+  const [activity,         setActivity]         = useState<ActivityEntry[]>([]);
+  const [activityLoading,  setActivityLoading]  = useState(false);
+  const [showActivity,     setShowActivity]      = useState(false);
+
   async function handleInviteAccepted(noteId: string) {
     try {
       const notesList = await listNotes();
@@ -120,7 +127,10 @@ export default function Notes() {
       try {
         // Connect the socket BEFORE opening the first note
         const token = localStorage.getItem(`sv_token_${user!.id}`);
-        if (token) connectSocket(token);
+        if (token){
+          connectSocket(token);
+          setSocketReady(true);
+        } 
 
         const [notesList, { folders: fl }] = await Promise.all([
           listNotes(),
@@ -138,11 +148,6 @@ export default function Notes() {
       }
     }
     init();
-    const token = localStorage.getItem(`sv_token_${user!.id}`);
-    if (token) {
-      connectSocket(token);
-      setSocketReady(true);
-    }
   }, []);
 
   // ── Join the room + reconnect re-sync
@@ -242,12 +247,20 @@ export default function Notes() {
     function handleInviteDeclined({ noteId, declinerUsername }: any) {
       toast(`${declinerUsername} declined your invite`, { icon: '👋' });
     }
+    
+    function handleNoteActivity({ entry }: any) {
+      setActivity((p) => {
+        if (p.some((a) => a.id === entry.id)) return p; // dedupe
+        return [entry, ...p]; // newest first
+      });
+    }
     socket.on('block:new', handleBlockNew);
     socket.on('block:deleted', handleBlockDeleted);
     socket.on('block:updated', handleBlockUpdated);
     socket.on('note:updated', handleNoteUpdated);
     socket.on('invite:accepted', handleInviteAcceptedSocket);
     socket.on('invite:declined', handleInviteDeclined);
+    socket.on('note:activity', handleNoteActivity);
 
     return () => {
       socket.off('block:new', handleBlockNew);
@@ -256,6 +269,7 @@ export default function Notes() {
       socket.off('note:updated', handleNoteUpdated);
       socket.off('invite:accepted', handleInviteAcceptedSocket);
       socket.off('invite:declined', handleInviteDeclined);
+      socket.off('note:activity', handleNoteActivity);
     };
   }, [selectedId, user?.id, hasChanges]);
 
@@ -276,7 +290,16 @@ export default function Notes() {
       setSelectedNote(note);
       setEditTitle(note.title || '');
       setEditContent(note.content || '');
-      if (note.type === 'shared') setBlocks(await fetchDecryptedBlocks(id));
+       if (note.type === 'shared') {
+        setBlocks(await fetchDecryptedBlocks(id));
+        setActivityLoading(true);
+        fetchActivity(id)
+          .then(setActivity)
+          .catch(() => {})
+          .finally(() => setActivityLoading(false));
+      } else {
+        setActivity([]);
+      }
     }
     catch (err: any) {
       toast.error(err.message ?? 'Failed to open note');
@@ -627,6 +650,8 @@ export default function Notes() {
               }
             }}
             onSave={handleSaveNote}
+            showActivity={showActivity}
+            onToggleActivity={() => setShowActivity((v) => !v)}
           />
 
           {/* Body */}
@@ -682,6 +707,11 @@ export default function Notes() {
                   note={selectedNote} user={user}
                   onAddBlock={handleOnBlockAdd}
                 />
+              }
+              activityPanel={
+                selectedNote?.type === 'shared' && showActivity
+                  ? <ActivityPanel activity={activity} loading={activityLoading} />
+                  : null
               }
             />
           ) : (

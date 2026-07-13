@@ -16,7 +16,8 @@ interface NoteEditorProps {
   onContentChange: (v: string) => void;
   onSave: () => void;
   onDeleteBlock: (blockId: string) => void;
-  footer: React.ReactNode;   // NoteFooter rendered here — shares same width context
+  footer: React.ReactNode;
+  activityPanel?: React.ReactNode;
 }
 
 const OWNER_BLOCK_COLOR = '#22C55E';
@@ -215,7 +216,7 @@ export default function NoteEditor({
   note, blocks, editTitle, editContent,
   folders, userId, isOwner,
   onTitleChange, onContentChange, onSave, onDeleteBlock,
-  footer,
+  footer, activityPanel,
 }: NoteEditorProps) {
   const folderName  = folders.find((f) => f.id === note.folder_id)?.name;
   const isShared    = note.type === 'shared';
@@ -263,7 +264,9 @@ export default function NoteEditor({
           </div>
         )}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 20px' }}>
+
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 20px' }}>
         {isShared ? (
           <div
             onMouseEnter={() => setHoveredOriginal(true)}
@@ -338,7 +341,16 @@ export default function NoteEditor({
           </div>
         )}
       </div>
-      {footer}
+      <div style={{
+        maxWidth: activityPanel ? 220 : 0,
+        overflow: 'hidden',
+        flexShrink: 0,
+        transition: 'max-width 0.22s ease',
+      }}>
+        {activityPanel}
+      </div>
+    </div>
+    {footer}
     </div>
   );
 }
