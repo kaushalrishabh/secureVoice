@@ -6,13 +6,14 @@ import {
   declineInvite,
   type PendingInvite,
 } from '../../services/invites.service';
+import { getSocket } from '../../lib/socket';
 
 interface PendingInvitesBannerProps {
-  /** Called after an invite is accepted, with the note_id that's now accessible. */
   onAccepted: (noteId: string) => void;
+  socketReady: boolean
 }
 
-export default function PendingInvitesBanner({ onAccepted }: PendingInvitesBannerProps) {
+export default function PendingInvitesBanner({ onAccepted, socketReady }: PendingInvitesBannerProps) {
   const [invites, setInvites]       = useState<PendingInvite[]>([]);
   const [loading, setLoading]       = useState(true);
   const [collapsed, setCollapsed]   = useState(false);
@@ -21,6 +22,40 @@ export default function PendingInvitesBanner({ onAccepted }: PendingInvitesBanne
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    function handleInviteReceived(payload: {
+      inviteId: string;
+      noteId: string;
+      inviterUsername: string;
+      token: string;
+      enc_note_dek: string;
+      expires_at: string;
+      created_at: string;
+    }) {
+      const newInvite: PendingInvite = {
+        id:               payload.inviteId,
+        note_id:          payload.noteId,
+        token:            payload.token,
+        enc_note_dek:     payload.enc_note_dek,
+        inviter_username: payload.inviterUsername,
+        expires_at:       payload.expires_at,
+        created_at:       payload.created_at,
+      };
+      setInvites((prev) => {
+        if (prev.some((i) => i.token === newInvite.token)) return prev;
+        return [newInvite, ...prev];
+      });
+      setCollapsed(false);
+      toast(`${payload.inviterUsername} shared a note with you`, { icon: '📩' });
+    }
+
+    socket.on('invite:received', handleInviteReceived);
+    return () => { socket.off('invite:received', handleInviteReceived); };
+  }, [socketReady]);
 
   async function refresh() {
     try {
@@ -68,10 +103,8 @@ export default function PendingInvitesBanner({ onAccepted }: PendingInvitesBanne
 
   if (loading || invites.length === 0) return null;
 
-  return (
+ return (
     <div style={{ borderBottom: '0.5px solid var(--sv-border)', background: 'var(--sv-accent-dim)' }}>
-
-      {/* Header — always visible, toggles collapse */}
       <button
         onClick={() => setCollapsed((c) => !c)}
         className="w-full flex items-center justify-between px-5 py-2.5"
@@ -79,9 +112,7 @@ export default function PendingInvitesBanner({ onAccepted }: PendingInvitesBanne
         <div className="flex items-center gap-2">
           <i className="ti ti-mail" style={{ fontSize: 15, color: 'var(--sv-accent)' }} aria-hidden="true" />
           <span className="text-[13px] font-medium" style={{ color: 'var(--sv-accent)' }}>
-            {invites.length === 1
-              ? '1 pending invite'
-              : `${invites.length} pending invites`}
+            {invites.length === 1 ? '1 pending invite' : `${invites.length} pending invites`}
           </span>
         </div>
         <i
@@ -91,7 +122,6 @@ export default function PendingInvitesBanner({ onAccepted }: PendingInvitesBanne
         />
       </button>
 
-      {/* Invite list */}
       {!collapsed && (
         <div className="px-5 pb-3 space-y-2">
           {invites.map((invite) => {
@@ -115,7 +145,6 @@ export default function PendingInvitesBanner({ onAccepted }: PendingInvitesBanne
                     <span className="font-medium">{invite.inviter_username}</span> shared a note with you
                   </p>
                 </div>
-
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
                     onClick={() => handleAccept(invite)}

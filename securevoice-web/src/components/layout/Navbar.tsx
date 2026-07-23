@@ -6,9 +6,11 @@ interface NavbarProps {
   hasChanges: boolean;
   saving: boolean;
   updatedAt?: string;
+  showActivity?: boolean;
   onShare: () => void;
   onDelete: () => void;
   onSave: () => void;
+  onToggleActivity?: () => void;
 }
 
 function fmtDate(iso: string) {
@@ -21,7 +23,7 @@ function fmtDate(iso: string) {
 
 export default function Navbar({
   note, isCreating, hasChanges, saving, updatedAt,
-  onShare, onDelete, onSave,
+  showActivity, onShare, onDelete, onSave, onToggleActivity,
 }: NavbarProps) {
   if (!note && !isCreating) return null;
 
@@ -68,6 +70,26 @@ export default function Navbar({
                 }}
               >
                 <i className="ti ti-trash" style={{ fontSize: 15, color: 'var(--sv-danger)' }} />
+              </button>
+            )}
+
+            {/* Activity toggle — only shown for shared notes */}
+            {isShared && onToggleActivity && (
+              <button
+                onClick={onToggleActivity}
+                title={showActivity ? 'Hide activity' : 'Show activity'}
+                style={{
+                  padding: '6px 8px', borderRadius: 8,
+                  background: showActivity ? 'rgba(245,158,11,0.1)' : 'none',
+                  border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center',
+                  transition: 'background 0.15s',
+                }}
+              >
+                <i
+                  className="ti ti-history"
+                  style={{ fontSize: 15, color: showActivity ? 'var(--sv-accent)' : 'var(--sv-text-3)' }}
+                />
               </button>
             )}
           </>

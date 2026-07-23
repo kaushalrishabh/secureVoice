@@ -16,7 +16,8 @@ interface NoteEditorProps {
   onContentChange: (v: string) => void;
   onSave: () => void;
   onDeleteBlock: (blockId: string) => void;
-  footer: React.ReactNode;   // NoteFooter rendered here — shares same width context
+  footer: React.ReactNode;
+  activityPanel?: React.ReactNode;
 }
 
 const OWNER_BLOCK_COLOR = '#22C55E';
@@ -215,7 +216,7 @@ export default function NoteEditor({
   note, blocks, editTitle, editContent,
   folders, userId, isOwner,
   onTitleChange, onContentChange, onSave, onDeleteBlock,
-  footer,
+  footer, activityPanel,
 }: NoteEditorProps) {
   const folderName  = folders.find((f) => f.id === note.folder_id)?.name;
   const isShared    = note.type === 'shared';
@@ -263,81 +264,102 @@ export default function NoteEditor({
           </div>
         )}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 20px' }}>
-        {isShared ? (
-          <div
-            onMouseEnter={() => setHoveredOriginal(true)}
-            onMouseLeave={() => setHoveredOriginal(false)}
-            style={{
-              display: 'flex', alignItems: 'flex-start', gap: 20,
-              paddingLeft: 14, paddingTop: 8, paddingBottom: 8, marginBottom: 4,
-              borderLeft: `2px solid ${ORIGINAL_COLOR}`,
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {editingOriginal ? (
-                <AutoTextarea
-                  autoFocus value={editContent} onChange={onContentChange}
-                  onBlur={() => { onSave(); setEditingOriginal(false); }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(); setEditingOriginal(false); }
-                    if (e.key === 'Escape') setEditingOriginal(false);
-                  }}
-                  style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)' }}
-                />
-              ) : (
-                <p
-                  onClick={() => isOwner && setEditingOriginal(true)}
-                  style={{ fontSize: 15, lineHeight: 1.8, margin: 0, color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap', cursor: isOwner ? 'text' : 'default' }}
-                >
-                  {editContent || <span style={{ color: 'var(--sv-text-4)', fontStyle: 'italic' }}>No content</span>}
-                </p>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, maxWidth: 160, overflow: 'hidden', paddingTop: 4 }}>
-              <div style={{ width: 5, height: 5, borderRadius: '50%', background: ORIGINAL_COLOR, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 500, color: ORIGINAL_COLOR, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {isOwner ? 'You' : 'Owner'}
-              </span>
-              {editingOriginal && (
-                <>
-                  <span style={{ fontSize: 10, color: 'var(--sv-text-4)', marginLeft: 4 }}>⌘↵ save</span>
-                  <button onClick={() => setEditingOriginal(false)} style={{ fontSize: 10, color: 'var(--sv-text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>esc</button>
-                </>
-              )}
-              {isOwner && (
-                <div style={{ display: 'flex', overflow: 'hidden', flexShrink: 0, maxWidth: showOriginalEdit ? 28 : 0, opacity: showOriginalEdit ? 1 : 0, transition: 'max-width 0.18s ease, opacity 0.12s ease' }}>
-                  <button onClick={() => setEditingOriginal(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' }}>
-                    <i className="ti ti-pencil" style={{ fontSize: 12, color: ORIGINAL_COLOR }} />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <AutoTextarea
-            value={editContent} onChange={onContentChange} onBlur={onSave}
-            placeholder="Start writing…"
-            style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)', flex: 1, minHeight: 200 }}
-          />
-        )}
 
-        {isShared && blocks.length > 0 && (
-          <div style={{ marginTop: 4 }}>
-            {blocks.map((block) => (
-              <Segment
-                key={block.id}
-                block={block}
-                noteId={note.id}
-                userId={userId}
-                isNoteOwner={isOwner}
-                noteOwnerId={noteOwnerId}
-                onDeleted={onDeleteBlock}
-              />
-            ))}
-          </div>
-        )}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+        <div
+          className="sv-scroll"
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '16px 20px' }}
+        >
+          {isShared ? (
+            <div
+              onMouseEnter={() => setHoveredOriginal(true)}
+              onMouseLeave={() => setHoveredOriginal(false)}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 20,
+                paddingLeft: 14, paddingTop: 8, paddingBottom: 8, marginBottom: 4,
+                borderLeft: `2px solid ${ORIGINAL_COLOR}`,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {editingOriginal ? (
+                  <AutoTextarea
+                    autoFocus value={editContent} onChange={onContentChange}
+                    onBlur={() => { onSave(); setEditingOriginal(false); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(); setEditingOriginal(false); }
+                      if (e.key === 'Escape') setEditingOriginal(false);
+                    }}
+                    style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)' }}
+                  />
+                ) : (
+                  <p
+                    onClick={() => isOwner && setEditingOriginal(true)}
+                    style={{ fontSize: 15, lineHeight: 1.8, margin: 0, color: 'var(--sv-text-2)', whiteSpace: 'pre-wrap', cursor: isOwner ? 'text' : 'default' }}
+                  >
+                    {editContent || <span style={{ color: 'var(--sv-text-4)', fontStyle: 'italic' }}>No content</span>}
+                  </p>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, maxWidth: 160, overflow: 'hidden', paddingTop: 4 }}>
+                <div style={{ width: 5, height: 5, borderRadius: '50%', background: ORIGINAL_COLOR, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 500, color: ORIGINAL_COLOR, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {isOwner ? 'You' : 'Owner'}
+                </span>
+                {editingOriginal && (
+                  <>
+                    <span style={{ fontSize: 10, color: 'var(--sv-text-4)', marginLeft: 4 }}>⌘↵ save</span>
+                    <button onClick={() => setEditingOriginal(false)} style={{ fontSize: 10, color: 'var(--sv-text-4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>esc</button>
+                  </>
+                )}
+                {isOwner && (
+                  <div style={{ display: 'flex', overflow: 'hidden', flexShrink: 0, maxWidth: showOriginalEdit ? 28 : 0, opacity: showOriginalEdit ? 1 : 0, transition: 'max-width 0.18s ease, opacity 0.12s ease' }}>
+                    <button onClick={() => setEditingOriginal(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' }}>
+                      <i className="ti ti-pencil" style={{ fontSize: 12, color: ORIGINAL_COLOR }} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <AutoTextarea
+              value={editContent} onChange={onContentChange} onBlur={onSave}
+              placeholder="Start writing…"
+              style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--sv-text-2)', caretColor: 'var(--sv-accent)', flex: 1, minHeight: 200 }}
+            />
+          )}
+
+          {isShared && blocks.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              {blocks.map((block) => (
+                <Segment
+                  key={block.id}
+                  block={block}
+                  noteId={note.id}
+                  userId={userId}
+                  isNoteOwner={isOwner}
+                  noteOwnerId={noteOwnerId}
+                  onDeleted={onDeleteBlock}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Activity panel — animates in from the right via max-width transition.
+            overflow:hidden on the wrapper clips content during animation.
+            The panel itself is h-full so it stretches the full body height. */}
+        <div style={{
+          maxWidth: activityPanel ? 220 : 0,
+          overflow: 'hidden',
+          flexShrink: 0,
+          transition: 'max-width 0.22s ease',
+          height: '100%',
+        }}>
+          {activityPanel}
+        </div>
       </div>
+
+      {/* ── Footer — full width below both columns ── */}
       {footer}
     </div>
   );
