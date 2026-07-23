@@ -706,6 +706,10 @@ export default function Notes() {
                 <NoteFooter
                   note={selectedNote} user={user}
                   onAddBlock={handleOnBlockAdd}
+                  onAppendContent={(transcript) => {
+                    setEditContent((prev) => prev ? `${prev}\n\n${transcript}` : transcript);
+                    setHasChanges(true);
+                  }}
                 />
               }
               activityPanel={
